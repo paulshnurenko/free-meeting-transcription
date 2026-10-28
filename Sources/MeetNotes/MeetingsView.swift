@@ -3,226 +3,241 @@ import SwiftUI
 
 struct MeetingsView: View {
     @Environment(AppModel.self) private var model
+    @State private var query = ""
+    @AppStorage("upNextExpanded") private var upNextExpanded = true
+    @AppStorage(SettingsKey.hasSeenWelcome) private var hasSeenWelcome = false
 
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
             List(selection: $model.selection) {
-                if model.calendarEnabled {
-                    Section("Scheduled") {
-                        if !model.calendarAuthorized {
-                            Button("Connect Calendar…") { Task { await model.connectCalendar() } }
-                                .buttonStyle(.link)
-                        } else if model.upcoming.isEmpty {
-                            Text("No meetings in the next week").foregroundStyle(.secondary)
-                        }
-                        ForEach(model.upcoming) { event in
-                            EventRow(event: event).tag(AppModel.Selection.event(event.id))
-                        }
+                if model.calendarEnabled, query.isEmpty {
+                    Section("Up Next", isExpanded: $upNextExpanded) {
+                        UpNextRows()
                     }
                 }
-                Section("Recorded") {
-                    ForEach(model.meetings) { meeting in
-                        MeetingRow(meeting: meeting)
-                            .tag(AppModel.Selection.meeting(meeting.id))
-                            .contextMenu {
-                                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([meeting.folder]) }
-                                Button("Transcribe Again") { model.enqueue(meeting) }
-                                Divider()
-                                Button("Move to Trash", role: .destructive) { model.delete(meeting) }
-                            }
+                ForEach(MeetingGroup.groups(filteredMeetings)) { group in
+                    Section(group.title) {
+                        ForEach(group.meetings) { meeting in
+                            MeetingRow(meeting: meeting, showsDate: group.showsDates)
+                                .tag(AppModel.Selection.meeting(meeting.id))
+                                .contextMenu { MeetingActions(meeting: meeting) }
+                        }
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 240, ideal: 290)
+            .searchable(text: $query, placement: .sidebar, prompt: "Search titles and transcripts")
+            .overlay {
+                if !query.isEmpty, filteredMeetings.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                }
+            }
             .safeAreaInset(edge: .bottom) {
-                StatusLines().padding(10)
+                ModelDownloadProgress().padding(12)
             }
+            .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 400)
         } detail: {
-            switch model.selection {
-            case .meeting(let id):
-                if let meeting = model.meetings.first(where: { $0.id == id }) {
-                    MeetingDetail(meeting: meeting).id(meeting.id)
+            DetailView(query: query)
+                .safeAreaInset(edge: .top) {
+                    NoticeBanner().padding(.horizontal, 16).padding(.top, 8)
                 }
-            case .event(let id):
-                if let event = model.upcoming.first(where: { $0.id == id }) {
-                    EventDetail(event: event)
-                } else {
-                    ContentUnavailableView("This meeting is over", systemImage: "calendar")
-                }
-            case nil:
-                ContentUnavailableView(
-                    model.meetings.isEmpty ? "No meetings yet" : "Select a meeting",
-                    systemImage: "waveform",
-                    description: Text("Start recording with the button above, from the menu bar, or from a scheduled meeting."))
-            }
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                RecordButton()
-            }
+            ToolbarItem(placement: .primaryAction) { RecordToolbarButton() }
         }
         .onAppear {
             model.reload()
             model.refreshCalendar()
         }
+        #if DEBUG
+        // For screenshots: `-debugSelectFirstEvent YES` opens the first scheduled meeting.
+        .onChange(of: model.upcoming.first?.id) {
+            if UserDefaults.standard.bool(forKey: "debugSelectFirstEvent"), let event = model.upcoming.first {
+                model.selection = .event(event.id)
+            }
+        }
+        #endif
+        .sheet(isPresented: Binding(get: { !hasSeenWelcome }, set: { hasSeenWelcome = !$0 })) {
+            WelcomeView()
+        }
+    }
+
+    private var filteredMeetings: [Meeting] {
+        model.meetings.filter { model.matches($0, query: query) }
     }
 }
 
-struct RecordButton: View {
-    @Environment(AppModel.self) private var model
+/// Recorded meetings grouped the way Notes and Mail do it.
+struct MeetingGroup: Identifiable {
+    let id: String
+    let title: String
+    let meetings: [Meeting]
+    /// Today's and yesterday's rows show only the time.
+    let showsDates: Bool
 
-    var body: some View {
-        if model.recording != nil {
-            Button {
-                Task { await model.stopRecording() }
-            } label: {
-                Label("Stop", systemImage: "stop.circle.fill")
+    static func groups(_ meetings: [Meeting], now: Date = .now) -> [MeetingGroup] {
+        let calendar = Calendar.current
+        var order: [String] = []
+        var buckets: [String: (title: String, dates: Bool, meetings: [Meeting])] = [:]
+        for meeting in meetings {
+            let date = meeting.startedAt ?? .distantPast
+            let key: String, title: String, dates: Bool
+            if calendar.isDateInToday(date) {
+                (key, title, dates) = ("today", String(localized: "Today"), false)
+            } else if calendar.isDateInYesterday(date) {
+                (key, title, dates) = ("yesterday", String(localized: "Yesterday"), false)
+            } else if let days = calendar.dateComponents([.day], from: date, to: now).day, days < 7 {
+                (key, title, dates) = ("week", String(localized: "Previous 7 Days"), true)
+            } else if let days = calendar.dateComponents([.day], from: date, to: now).day, days < 30 {
+                (key, title, dates) = ("month", String(localized: "Previous 30 Days"), true)
+            } else {
+                let month = calendar.dateComponents([.year, .month], from: date)
+                key = "\(month.year ?? 0)-\(month.month ?? 0)"
+                title = date.formatted(.dateTime.month(.wide).year())
+                dates = true
             }
-            .tint(.red)
-        } else {
-            Button {
-                Task { await model.startRecording(title: "") }
-            } label: {
-                Label("Record", systemImage: "record.circle")
+            if buckets[key] == nil {
+                order.append(key)
+                buckets[key] = (title, dates, [])
             }
+            buckets[key]!.meetings.append(meeting)
         }
+        return order.map { MeetingGroup(id: $0, title: buckets[$0]!.title, meetings: buckets[$0]!.meetings, showsDates: buckets[$0]!.dates) }
     }
 }
 
 struct MeetingRow: View {
     @Environment(AppModel.self) private var model
     let meeting: Meeting
+    let showsDate: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 5) {
-                if model.recording?.meeting.id == meeting.id {
-                    Image(systemName: "record.circle.fill").foregroundStyle(.red)
-                } else if model.processing?.id == meeting.id {
-                    ProgressView().controlSize(.mini)
-                }
-                Text(meeting.title).lineLimit(1)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meeting.displayTitle)
+                    .lineLimit(1)
+                    .foregroundStyle(meeting.meta.title == nil ? .secondary : .primary)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            HStack {
-                if let date = meeting.startedAt {
-                    Text(date, format: .dateTime.day().month().hour().minute())
-                }
-                if let seconds = meeting.meta.durationSec {
-                    Text("· \(max(1, seconds / 60)) min")
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            StatusMark(status: model.status(of: meeting))
         }
         .padding(.vertical, 2)
     }
+
+    private var subtitle: String {
+        var parts: [String] = []
+        if let date = meeting.startedAt {
+            parts.append(showsDate
+                         ? date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+                         : date.formatted(date: .omitted, time: .shortened))
+        }
+        if let duration = meeting.duration { parts.append(duration.spokenLength) }
+        return parts.joined(separator: " · ")
+    }
 }
 
-struct MeetingDetail: View {
+/// Context menu and toolbar actions for a recorded meeting.
+struct MeetingActions: View {
     @Environment(AppModel.self) private var model
     let meeting: Meeting
-    @State private var title = ""
-    @State private var segments: [Segment] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            content
+        Button("Show in Finder", systemImage: "folder") {
+            NSWorkspace.shared.activateFileViewerSelecting([meeting.folder])
         }
-        .onAppear(perform: load)
-        .onChange(of: model.processing?.id) { load() }
+        Button("Transcribe Again", systemImage: "arrow.clockwise") { model.enqueue(meeting) }
+            .disabled(!canTranscribe)
+        Divider()
+        Button("Move to Trash", systemImage: "trash", role: .destructive) { model.delete(meeting) }
+            .disabled(isBusy)
     }
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("Title", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.title2.bold())
-                    .onSubmit { model.rename(meeting, to: title) }
-                HStack {
-                    if let date = meeting.startedAt {
-                        Text(date, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
-                    }
-                    if let seconds = meeting.meta.durationSec {
-                        Text("· \(Transcript.timestamp(Double(seconds)))")
-                    }
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(Transcript.markdown(segments), forType: .string)
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .disabled(segments.isEmpty)
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([meeting.folder])
-            } label: {
-                Label("Finder", systemImage: "folder")
-            }
+    private var isBusy: Bool {
+        switch model.status(of: meeting) {
+        case .recording, .processing: true
+        default: false
         }
-        .padding(16)
+    }
+
+    private var canTranscribe: Bool {
+        switch model.status(of: meeting) {
+        case .recording, .processing, .queued: false
+        default: meeting.hasAudio
+        }
+    }
+}
+
+/// Start/stop in the window toolbar; shows the running time while recording.
+struct RecordToolbarButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let recording = model.recording {
+            Button {
+                Task { await model.stopRecording() }
+            } label: {
+                HStack(spacing: 6) {
+                    RecordingDot(size: 8)
+                    ElapsedTime(since: recording.startedAt)
+                    Text("Stop")
+                }
+            }
+            .help("Stop Recording")
+        } else {
+            Button {
+                Task { await model.toggleRecording() }
+            } label: {
+                Label("Record", systemImage: "record.circle")
+            }
+            .help("Start Recording")
+        }
+    }
+}
+
+/// What the right side of the window shows.
+struct DetailView: View {
+    @Environment(AppModel.self) private var model
+    let query: String
+
+    var body: some View {
+        switch model.selection {
+        case .meeting(let id):
+            if let meeting = model.meeting(id) {
+                MeetingDetail(meeting: meeting, highlight: query)
+                    .id(meeting.id)
+            } else {
+                emptyState
+            }
+        case .event(let id):
+            if let event = model.upcoming.first(where: { $0.id == id }) {
+                EventDetail(event: event)
+            } else {
+                ContentUnavailableView("This Meeting Is Over", systemImage: "calendar")
+            }
+        case nil:
+            emptyState
+        }
     }
 
     @ViewBuilder
-    private var content: some View {
-        if model.recording?.meeting.id == meeting.id {
-            ContentUnavailableView("Recording", systemImage: "record.circle",
-                                   description: Text("The transcript appears after you stop."))
-        } else if model.processing?.id == meeting.id {
+    private var emptyState: some View {
+        if model.meetings.isEmpty {
             ContentUnavailableView {
-                ProgressView()
+                Label("No Meetings Yet", systemImage: "waveform")
             } description: {
-                Text(model.processing?.status ?? "")
-            }
-        } else if segments.isEmpty {
-            ContentUnavailableView {
-                Label(meeting.hasTranscript ? "No speech found" : "Not transcribed yet", systemImage: "text.bubble")
+                Text("Record a call from any app, like Zoom, Google Meet, Teams or Slack. The transcript is made on this Mac.")
             } actions: {
-                Button("Transcribe") { model.enqueue(meeting) }
+                Button("Start Recording") { Task { await model.toggleRecording() } }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
             }
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(segments, id: \.self) { segment in
-                        SegmentView(segment: segment, isMe: segment.speaker == model.me)
-                    }
-                }
-                .padding(16)
-                .textSelection(.enabled)
-            }
-        }
-    }
-
-    private func load() {
-        title = meeting.title
-        segments = meeting.segments()
-    }
-}
-
-struct SegmentView: View {
-    let segment: Segment
-    let isMe: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Text(segment.speaker)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(isMe ? Color.accentColor : Color.orange)
-                Text(Transcript.timestamp(segment.start))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-            Text(segment.text)
-                .lineSpacing(2)
-                .frame(maxWidth: 720, alignment: .leading)
+            ContentUnavailableView("Select a Meeting", systemImage: "text.bubble",
+                                   description: Text("Or start a new recording with the button in the toolbar."))
         }
     }
 }

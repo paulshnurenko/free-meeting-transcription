@@ -3,6 +3,7 @@ import Foundation
 public enum Pipeline {
     public enum Stage: Sendable {
         case loadingAudio
+        case removingEcho
         case transcribing(speaker: String, fraction: Double)
         case saving
     }
@@ -20,6 +21,7 @@ public enum Pipeline {
         var mic = fm.fileExists(atPath: meeting.micURL.path) ? try Audio.load(meeting.micURL) : nil
         let system = fm.fileExists(atPath: meeting.systemURL.path) ? try Audio.load(meeting.systemURL) : nil
         if let m = mic, let s = system {
+            stage?(.removingEcho)
             mic = EchoRemoval.clean(mic: m, system: s)
         }
 
@@ -35,6 +37,10 @@ public enum Pipeline {
         stage?(.saving)
         let segments = Transcript.combine(mic: mine, system: theirs)
         try meeting.saveTranscript(segments)
+        // Re-read: the title may have been renamed while this ran.
+        var latest = Meeting(folder: meeting.folder)
+        latest.meta.micSpeaker = me
+        try latest.save()
         return segments
     }
 }

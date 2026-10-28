@@ -14,6 +14,8 @@ public struct CalendarEvent: Identifiable, Hashable, Sendable {
     public let location: String?
     public let notes: String?
     public let calendarTitle: String
+    /// The calendar's color as sRGB components, for the dot next to the event.
+    public let calendarColor: [Double]?
 
     public func isHappening(at date: Date = .now) -> Bool {
         start <= date && date < end
@@ -85,8 +87,20 @@ public final class CalendarService: @unchecked Sendable {
             attendees: attendees,
             meetingURL: meetingLink(in: event),
             location: event.location?.isEmpty == false ? event.location : nil,
-            notes: event.notes?.isEmpty == false ? event.notes : nil,
-            calendarTitle: event.calendar.title)
+            notes: cleanNotes(event.notes),
+            calendarTitle: event.calendar.title,
+            calendarColor: event.calendar.cgColor
+                .flatMap { $0.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil) }
+                .flatMap { $0.components?.prefix(3).map(Double.init) })
+    }
+
+    /// Event notes without the dial-in block Google Meet appends (the link is the Join button).
+    static func cleanNotes(_ notes: String?) -> String? {
+        guard var notes else { return nil }
+        notes = notes.replacingOccurrences(
+            of: #"-::~[:~]+:-[\s\S]*?-::~[:~]+:-"#, with: "", options: .regularExpression)
+        notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return notes.isEmpty ? nil : notes
     }
 
     /// Google Meet, Zoom, Teams, Webex or Slack link from the event's URL, location or notes.

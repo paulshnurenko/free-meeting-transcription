@@ -10,6 +10,8 @@ public struct Meeting: Identifiable, Hashable, Sendable {
         /// Set when the recording was started for a calendar event.
         public var calendarEventID: String?
         public var attendees: [String]?
+        /// The label used for the microphone track when it was transcribed.
+        public var micSpeaker: String?
 
         enum CodingKeys: String, CodingKey {
             case startedAt = "started_at"
@@ -17,6 +19,7 @@ public struct Meeting: Identifiable, Hashable, Sendable {
             case durationSec = "duration_sec"
             case calendarEventID = "calendar_event_id"
             case attendees
+            case micSpeaker = "mic_speaker"
         }
     }
 

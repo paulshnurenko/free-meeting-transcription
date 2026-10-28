@@ -129,6 +129,14 @@ public enum Transcript {
         return String(format: "%02d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
     }
 
+    /// "2:35" or "1:02:35", for display.
+    public static func shortTimestamp(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        return total >= 3600
+            ? String(format: "%d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
+            : String(format: "%d:%02d", total / 60, total % 60)
+    }
+
     public static func markdown(_ segments: [Segment]) -> String {
         segments.map { "**[\(timestamp($0.start))] \($0.speaker):** \($0.text)" }.joined(separator: "\n\n")
     }

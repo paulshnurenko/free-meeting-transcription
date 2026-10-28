@@ -14,13 +14,15 @@ struct MeetNotesApp: App {
         .defaultSize(width: 980, height: 680)
         .commands {
             CommandGroup(after: .appInfo) { CheckForUpdatesButton() }
+            CommandMenu("Recording") { RecordingCommands().environment(model) }
         }
 
         MenuBarExtra {
             MenuBarView()
                 .environment(model)
         } label: {
-            Image(systemName: model.recording != nil ? "record.circle.fill" : "waveform")
+            MenuBarLabel()
+                .environment(model)
         }
         .menuBarExtraStyle(.window)
 
@@ -48,4 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+struct RecordingCommands: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button(model.recording == nil ? "Start Recording" : "Stop Recording") {
+            Task { await model.toggleRecording() }
+        }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+    }
 }

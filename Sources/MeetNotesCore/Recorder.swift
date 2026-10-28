@@ -74,10 +74,12 @@ public final class Recorder: @unchecked Sendable {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         tap?.stop()
-        // Drain queued buffers, then close the files so their headers are written.
+        // Drain queued buffers, pad both tracks with silence up to now (a process tap delivers
+        // nothing while no app plays sound), then close the files so their headers are written.
+        let end = seconds(atHostTime: mach_absolute_time())
         queue.sync {
-            system.close()
-            mic?.close()
+            system.close(padTo: end)
+            mic?.close(padTo: end)
         }
     }
 
@@ -362,7 +364,9 @@ final class TrackWriter {
         return peak
     }
 
-    func close() {
+    func close(padTo seconds: Double) {
+        let expected = AVAudioFramePosition(max(0, seconds) * Double(Audio.sampleRate))
+        if expected > framesWritten { writeSilence(frames: expected - framesWritten) }
         file = nil
     }
 
