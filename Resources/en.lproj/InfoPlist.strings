@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "MeetNotes records your voice in meetings to make a transcript. Audio is processed only on this Mac.";
+"NSAudioCaptureUsageDescription" = "MeetNotes records the call audio (the other participants' voices) to make a transcript. The screen is never recorded, and audio is processed only on this Mac.";
+"NSCalendarsFullAccessUsageDescription" = "MeetNotes shows scheduled meetings from your calendar so you can record them in one click and label transcripts with the title and attendees.";
+"NSCalendarsUsageDescription" = "MeetNotes shows scheduled meetings from your calendar so you can record them in one click and label transcripts with the title and attendees.";

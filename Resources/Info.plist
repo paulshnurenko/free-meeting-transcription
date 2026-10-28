@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>MeetNotes</string>
+	<key>CFBundleExecutable</key>
+	<string>MeetNotes</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.paulshnurenko.meetnotes</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>uk</string>
+	</array>
+	<key>CFBundleName</key>
+	<string>MeetNotes</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.2.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>MeetNotes records the call audio (the other participants' voices) to make a transcript. The screen is never recorded, and audio is processed only on this Mac.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>MeetNotes shows scheduled meetings from your calendar so you can record them in one click and label transcripts with the title and attendees.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>MeetNotes shows scheduled meetings from your calendar so you can record them in one click and label transcripts with the title and attendees.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Pavlo Shnurenko. MIT License.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MeetNotes records your voice in meetings to make a transcript. Audio is processed only on this Mac.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/paulshnurenko/free-meeting-transcription/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Mgp3mhFu6tdZM6SNVgv1p1VzhGBhr2zD6bsVyyqxrTU=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+</dict>
+</plist>
