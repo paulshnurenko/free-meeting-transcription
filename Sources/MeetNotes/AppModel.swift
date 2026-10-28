@@ -113,6 +113,29 @@ final class AppModel {
     /// Why the last transcription of a meeting failed, until it is retried.
     private(set) var failures: [Meeting.ID: String] = [:]
     var modelState: ModelState = .unknown
+
+    /// What the menu bar icon shows. Kept apart from `recording` and `processing`, which change
+    /// several times a second: every change redraws the status item, so it changes once a second
+    /// at most. (A TimelineView inside the menu bar label makes SwiftUI redraw it in a busy loop.)
+    enum MenuBarState: Equatable {
+        case idle
+        case recording(elapsed: Int)
+        case processing
+    }
+
+    private(set) var menuBarState: MenuBarState = .idle
+
+    private func updateMenuBarState() {
+        let state: MenuBarState = if let recording {
+            .recording(elapsed: Int(Date.now.timeIntervalSince(recording.startedAt)))
+        } else if processing != nil {
+            .processing
+        } else {
+            .idle
+        }
+        if state != menuBarState { menuBarState = state }
+    }
+
     /// A problem with recording or permissions worth showing in the window and the menu.
     var notice: String?
     var noticeNeedsPermissions = false
@@ -150,6 +173,12 @@ final class AppModel {
         for meeting in meetings.reversed() where !meeting.hasTranscript && meeting.hasAudio {
             enqueue(meeting)
         }
+        #if DEBUG
+        // For testing: `-debugStartRecording YES` starts recording right after launch.
+        if UserDefaults.standard.bool(forKey: "debugStartRecording") {
+            Task { await startRecording(title: "Debug recording") }
+        }
+        #endif
     }
 
     func reload() {
@@ -206,6 +235,7 @@ final class AppModel {
             try await recorder.start()
             self.recorder = recorder
             recording = Recording(meeting: meeting, startedAt: .now)
+            updateMenuBarState()
             reload()
             selection = .meeting(meeting.id)
         } catch {
@@ -223,6 +253,7 @@ final class AppModel {
         await recorder.stop()
         self.recorder = nil
         recording = nil
+        updateMenuBarState()
         var meeting = current.meeting
         meeting.meta.durationSec = Int(Date.now.timeIntervalSince(current.startedAt))
         try? meeting.save()
@@ -243,6 +274,7 @@ final class AppModel {
         case .levels(let system, let mic):
             recording?.systemLevel = system
             recording?.micLevel = mic
+            updateMenuBarState()
         case .interrupted:
             recording?.reconnecting = true
         case .resumed:
@@ -269,6 +301,7 @@ final class AppModel {
             let meeting = queue.removeFirst()
             queuedIDs = queue.map(\.id)
             processing = (meeting.id, ProcessingProgress(step: .preparingModel))
+            updateMenuBarState()
             do {
                 let transcriber = try await loadTranscriber()
                 let me = me, others = others
@@ -289,6 +322,7 @@ final class AppModel {
                 failures[meeting.id] = error.localizedDescription
             }
             processing = nil
+            updateMenuBarState()
             reload()
         }
     }

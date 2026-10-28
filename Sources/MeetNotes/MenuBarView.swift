@@ -9,14 +9,15 @@ struct MenuBarLabel: View {
 
     var body: some View {
         Group {
-            if let recording = model.recording {
+            switch model.menuBarState {
+            case .recording(let elapsed):
                 HStack(spacing: 4) {
                     Image(systemName: "record.circle.fill")
-                    ElapsedTime(since: recording.startedAt)
+                    Text(Transcript.shortTimestamp(Double(elapsed))).monospacedDigit()
                 }
-            } else if model.processing != nil {
+            case .processing:
                 Image(systemName: "waveform.badge.ellipsis")
-            } else {
+            case .idle:
                 Image(systemName: "waveform")
             }
         }

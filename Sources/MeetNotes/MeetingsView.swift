@@ -176,13 +176,15 @@ struct RecordToolbarButton: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if let recording = model.recording {
+        // Toolbar items are hosted by AppKit like the menu bar icon: no TimelineView or endless
+        // animation here, the once-a-second model state drives the time.
+        if case .recording(let elapsed) = model.menuBarState {
             Button {
                 Task { await model.stopRecording() }
             } label: {
                 HStack(spacing: 6) {
-                    RecordingDot(size: 8)
-                    ElapsedTime(since: recording.startedAt)
+                    Image(systemName: "record.circle.fill").foregroundStyle(.red)
+                    Text(Transcript.shortTimestamp(Double(elapsed))).monospacedDigit()
                     Text("Stop")
                 }
             }
