@@ -145,15 +145,21 @@ struct ProcessingSteps: View {
 /// A round badge with the speaker's initial, like a contact avatar.
 struct SpeakerBadge: View {
     let name: String
-    let isMe: Bool
+    let color: Color
 
     var body: some View {
-        Text(String(name.prefix(1)).uppercased())
+        Text(initial)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.white)
             .frame(width: 24, height: 24)
-            .background(Circle().fill(isMe ? Color.accentColor.gradient : Color.orange.gradient))
+            .background(Circle().fill(color.gradient))
             .accessibilityHidden(true)
+    }
+
+    /// "Speaker 2" → "2", "Olena" → "O".
+    private var initial: String {
+        if let last = name.split(separator: " ").last, last.allSatisfy(\.isNumber) { return String(last) }
+        return String(name.prefix(1)).uppercased()
     }
 }
 

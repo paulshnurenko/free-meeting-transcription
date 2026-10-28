@@ -223,6 +223,9 @@ struct TranscriptView: View {
     let meeting: Meeting
     let highlight: String
     @State private var segments: [Segment] = []
+    /// The speaker being given a custom name, and the name typed so far.
+    @State private var renaming: String?
+    @State private var newName = ""
 
     var body: some View {
         ScrollView {
@@ -231,7 +234,16 @@ struct TranscriptView: View {
                 Divider()
                 LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                        SegmentRow(segment: segment, isMe: segment.speaker == micSpeaker, highlight: highlight)
+                        SegmentRow(
+                            segment: segment,
+                            color: colors[segment.speaker] ?? .orange,
+                            highlight: highlight,
+                            suggestions: suggestions(for: segment.speaker),
+                            rename: { model.renameSpeaker(in: meeting, from: segment.speaker, to: $0) },
+                            renameCustom: {
+                                newName = ""
+                                renaming = segment.speaker
+                            })
                     }
                 }
             }
@@ -241,29 +253,74 @@ struct TranscriptView: View {
             .frame(maxWidth: .infinity)
         }
         .onAppear { segments = meeting.segments() }
+        .onChange(of: model.transcriptRevision) { segments = Meeting(folder: meeting.folder).segments() }
+        .alert("Rename Speaker", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Rename") {
+                if let renaming { model.renameSpeaker(in: meeting, from: renaming, to: newName) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every line by “\(renaming ?? "")” gets the new name.")
+        }
     }
 
     /// Older meetings did not store it: fall back to the current setting, then the defaults.
     private var micSpeaker: String {
-        if let stored = meeting.meta.micSpeaker { return stored }
+        if let stored = Meeting(folder: meeting.folder).meta.micSpeaker { return stored }
         let speakers = Set(segments.map(\.speaker))
         return [model.me, "Me", "Я"].first { speakers.contains($0) } ?? model.me
+    }
+
+    /// You in the accent color; the others in distinct colors, in order of first appearance.
+    private var colors: [String: Color] {
+        let palette: [Color] = [.orange, .purple, .teal, .pink, .green, .indigo, .brown, .cyan]
+        var result: [String: Color] = [micSpeaker: .accentColor]
+        for segment in segments where result[segment.speaker] == nil {
+            result[segment.speaker] = palette[(result.count - 1) % palette.count]
+        }
+        return result
+    }
+
+    /// Calendar attendees not already used as a speaker name.
+    private func suggestions(for speaker: String) -> [String] {
+        let used = Set(segments.map(\.speaker))
+        return (meeting.meta.attendees ?? []).filter { !used.contains($0) }
     }
 }
 
 struct SegmentRow: View {
     let segment: Segment
-    let isMe: Bool
+    let color: Color
     let highlight: String
+    let suggestions: [String]
+    let rename: (String) -> Void
+    let renameCustom: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            SpeakerBadge(name: segment.speaker, isMe: isMe)
+            SpeakerBadge(name: segment.speaker, color: color)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(segment.speaker)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(isMe ? Color.accentColor : Color.orange)
+                    Menu {
+                        if !suggestions.isEmpty {
+                            Section("Rename to") {
+                                ForEach(suggestions, id: \.self) { name in
+                                    Button(name) { rename(name) }
+                                }
+                            }
+                        }
+                        Button("Other Name…", action: renameCustom)
+                    } label: {
+                        Text(segment.speaker)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(color)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Rename this speaker")
                     Text(Transcript.shortTimestamp(segment.start))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.tertiary)

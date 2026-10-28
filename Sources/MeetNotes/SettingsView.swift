@@ -138,9 +138,17 @@ struct CalendarSettings: View {
 
 struct TranscriptionSettings: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(SettingsKey.distinguishSpeakers) private var distinguishSpeakers = true
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Tell apart several people on the call", isOn: $distinguishSpeakers)
+            } footer: {
+                Text("Labels each remote voice as Speaker 1, Speaker 2… Click a name in a transcript to rename that speaker. Adds a few seconds per 10 minutes of audio.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 LabeledContent("Model", value: "NVIDIA Parakeet TDT 0.6B v3")
                 LabeledContent("Languages") {

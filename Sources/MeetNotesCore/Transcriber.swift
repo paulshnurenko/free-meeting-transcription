@@ -28,6 +28,7 @@ public final class Transcriber: @unchecked Sendable {
     public func transcribe(
         _ samples: [Float],
         speaker: String,
+        speakers: SpeakerTimeline? = nil,
         progress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> [Segment] {
         guard !Audio.isSilent(samples) else { return [] }
@@ -40,7 +41,10 @@ public final class Transcriber: @unchecked Sendable {
             let padded = piece.count < Audio.sampleRate ? piece + [Float](repeating: 0, count: Audio.sampleRate - piece.count) : piece
             var state = TdtDecoderState.make()
             let result = try await manager.transcribe(padded, decoderState: &state)
-            for var seg in Self.sentences(from: result.tokenTimings ?? [], speaker: speaker) where !Transcript.isFiller(seg.text) {
+            let lines = Self.sentences(from: result.tokenTimings ?? [], speaker: speaker) { time in
+                speakers?.speaker(at: start + time)
+            }
+            for var seg in lines where !Transcript.isFiller(seg.text) {
                 seg.start = ((start + seg.start) * 100).rounded() / 100
                 seg.end = ((start + seg.end) * 100).rounded() / 100
                 segments.append(seg)
@@ -50,10 +54,16 @@ public final class Transcriber: @unchecked Sendable {
     }
 
     /// Groups tokens into sentences: split after . ? ! at a word boundary, on pauses longer than
-    /// a second, and before a sentence grows past 30 seconds.
-    static func sentences(from tokens: [TokenTiming], speaker: String) -> [Segment] {
+    /// a second, before a sentence grows past 30 seconds, and where `speakerAt` says another
+    /// person started talking. Words in pauses between turns stay with the previous speaker.
+    static func sentences(
+        from tokens: [TokenTiming],
+        speaker: String,
+        speakerAt: (Double) -> String? = { _ in nil }
+    ) -> [Segment] {
         var segments: [Segment] = []
         var current: Segment?
+        var lastSpeaker = speaker
 
         func finish() {
             guard var seg = current else { return }
@@ -68,14 +78,17 @@ public final class Transcriber: @unchecked Sendable {
         for token in tokens {
             let piece = token.token.replacingOccurrences(of: "▁", with: " ")
             let startsWord = piece.hasPrefix(" ")
+            let who = startsWord || current == nil ? speakerAt((token.startTime + token.endTime) / 2) : nil
             if let seg = current, startsWord {
                 let ended = seg.text.last.map { ".?!".contains($0) } ?? false
-                if ended || token.startTime - seg.end > 1.0 || token.startTime - seg.start > 30 {
+                let switched = who.map { $0 != seg.speaker } ?? false
+                if ended || switched || token.startTime - seg.end > 1.0 || token.startTime - seg.start > 30 {
                     finish()
                 }
             }
             if current == nil {
-                current = Segment(start: token.startTime, end: token.endTime, speaker: speaker, text: "")
+                lastSpeaker = who ?? lastSpeaker
+                current = Segment(start: token.startTime, end: token.endTime, speaker: lastSpeaker, text: "")
             }
             current!.text += current!.text.isEmpty ? piece.trimmingCharacters(in: .whitespaces) : piece
             current!.end = token.endTime

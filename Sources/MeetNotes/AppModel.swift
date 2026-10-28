@@ -14,6 +14,7 @@ enum SettingsKey {
     static let remindOnStart = "remindOnStart"
     static let hasSeenWelcome = "hasSeenWelcome"
     static let lastMeeting = "lastMeeting"
+    static let distinguishSpeakers = "distinguishSpeakers"
 }
 
 /// Where a meeting is in its life: recording → queued → processing → ready (or failed).
@@ -31,7 +32,7 @@ enum MeetingStatus: Equatable {
 
 /// The steps of turning a recording into a transcript, in order.
 enum ProcessingStep: Int, CaseIterable, Comparable {
-    case preparingModel, readingAudio, removingEcho, transcribingMic, transcribingCall, saving
+    case preparingModel, readingAudio, removingEcho, transcribingMic, identifyingSpeakers, transcribingCall, saving
 
     static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 
@@ -41,6 +42,7 @@ enum ProcessingStep: Int, CaseIterable, Comparable {
         case .readingAudio: String(localized: "Reading the recording")
         case .removingEcho: String(localized: "Removing speaker echo")
         case .transcribingMic: String(localized: "Transcribing your microphone")
+        case .identifyingSpeakers: String(localized: "Telling the speakers apart")
         case .transcribingCall: String(localized: "Transcribing the call audio")
         case .saving: String(localized: "Saving the transcript")
         }
@@ -52,8 +54,9 @@ enum ProcessingStep: Int, CaseIterable, Comparable {
         case .preparingModel: (0, 0.04)
         case .readingAudio: (0.04, 0.02)
         case .removingEcho: (0.06, 0.06)
-        case .transcribingMic: (0.12, 0.42)
-        case .transcribingCall: (0.54, 0.42)
+        case .transcribingMic: (0.12, 0.34)
+        case .identifyingSpeakers: (0.46, 0.16)
+        case .transcribingCall: (0.62, 0.34)
         case .saving: (0.96, 0.04)
         }
     }
@@ -148,6 +151,9 @@ final class AppModel {
 
     @ObservationIgnored private var recorder: Recorder?
     @ObservationIgnored private var transcriber: Transcriber?
+    @ObservationIgnored private var diarizer: SpeakerDiarizer?
+    /// Bumped when a saved transcript changes (speakers renamed), so open views reload it.
+    private(set) var transcriptRevision = 0
     @ObservationIgnored private var queue: [Meeting] = []
     /// Transcript text by meeting, for search.
     @ObservationIgnored private var searchText: [Meeting.ID: String] = [:]
@@ -161,7 +167,9 @@ final class AppModel {
     var others: String { UserDefaults.standard.string(forKey: SettingsKey.others) ?? String(localized: "Others") }
 
     init() {
-        UserDefaults.standard.register(defaults: [SettingsKey.calendarEnabled: true, SettingsKey.remindOnStart: true])
+        UserDefaults.standard.register(defaults: [
+            SettingsKey.calendarEnabled: true, SettingsKey.remindOnStart: true, SettingsKey.distinguishSpeakers: true,
+        ])
         reload()
         if let path = UserDefaults.standard.string(forKey: SettingsKey.lastMeeting),
            let meeting = meetings.first(where: { $0.folder.path == path }) {
@@ -304,11 +312,15 @@ final class AppModel {
             updateMenuBarState()
             do {
                 let transcriber = try await loadTranscriber()
+                let diarizer = try await loadDiarizer()
                 let me = me, others = others
-                let segments = try await Pipeline.process(meeting, transcriber: transcriber, me: me, others: others) { stage in
+                let segments = try await Pipeline.process(
+                    meeting, transcriber: transcriber, diarizer: diarizer, me: me, others: others
+                ) { stage in
                     let progress = switch stage {
                     case .loadingAudio: ProcessingProgress(step: .readingAudio)
                     case .removingEcho: ProcessingProgress(step: .removingEcho)
+                    case .identifyingSpeakers(let fraction): ProcessingProgress(step: .identifyingSpeakers, stepFraction: fraction)
                     case .transcribing(let speaker, let fraction):
                         ProcessingProgress(step: speaker == me ? .transcribingMic : .transcribingCall, stepFraction: fraction)
                     case .saving: ProcessingProgress(step: .saving)
@@ -343,6 +355,34 @@ final class AppModel {
             modelState = .failed(error.localizedDescription)
             throw error
         }
+    }
+
+    /// The speaker model, when telling several remote voices apart is on. A failure to get it
+    /// (no network on first use) only skips that step.
+    private func loadDiarizer() async throws -> SpeakerDiarizer? {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.distinguishSpeakers) else { return nil }
+        if let diarizer { return diarizer }
+        diarizer = try? await SpeakerDiarizer.load()
+        return diarizer
+    }
+
+    /// Gives every line by `old` the name `new`, in the saved transcript.
+    func renameSpeaker(in meeting: Meeting, from old: String, to new: String) {
+        let name = new.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, name != old else { return }
+        let segments = meeting.segments().map { segment in
+            var segment = segment
+            if segment.speaker == old { segment.speaker = name }
+            return segment
+        }
+        try? meeting.saveTranscript(segments)
+        var latest = Meeting(folder: meeting.folder)
+        if latest.meta.micSpeaker == old {
+            latest.meta.micSpeaker = name
+            try? latest.save()
+        }
+        reload()
+        transcriptRevision += 1
     }
 
     // MARK: Calendar

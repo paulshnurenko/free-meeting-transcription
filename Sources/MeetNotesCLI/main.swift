@@ -1,7 +1,7 @@
 import Foundation
 import MeetNotesCore
 
-// meetnotes-cli process <meeting folder or name>   re-recognizes a recorded meeting
+// meetnotes-cli process <meeting folder or name> [--no-speakers]   re-recognizes a recorded meeting
 // meetnotes-cli list                               lists meetings
 
 let store = MeetingStore(root: MeetingStore.defaultRoot)
@@ -20,7 +20,7 @@ case "list":
     }
 
 case "process":
-    guard args.count == 2 else { fail("usage: meetnotes-cli process <folder>") }
+    guard args.count >= 2 else { fail("usage: meetnotes-cli process <folder> [--no-speakers]") }
     var folder = URL(filePath: (args[1] as NSString).expandingTildeInPath)
     if !FileManager.default.fileExists(atPath: folder.path) { folder = store.root.appending(path: args[1]) }
     let meeting = Meeting(folder: folder)
@@ -32,8 +32,10 @@ case "process":
     }
     FileHandle.standardError.write(Data("\rModel ready in \(Int(Date().timeIntervalSince(started))) s\n".utf8))
 
+    let diarizer = args.contains("--no-speakers") ? nil : try await SpeakerDiarizer.load()
+
     let t0 = Date()
-    let segments = try await Pipeline.process(meeting, transcriber: transcriber, me: "Me", others: "Others") { stage in
+    let segments = try await Pipeline.process(meeting, transcriber: transcriber, diarizer: diarizer, me: "Me", others: "Others") { stage in
         if case .transcribing(let speaker, let fraction) = stage {
             FileHandle.standardError.write(Data(String(format: "\rTranscribing %@ %.0f%%", speaker, fraction * 100).utf8))
         }

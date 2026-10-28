@@ -18,6 +18,8 @@ saved as plain files you own.
   and no bot in the participant list.
 - **On-device speech recognition** in 25 European languages, including English, Ukrainian, Polish,
   German, French and Spanish. An hour-long meeting takes about a minute to transcribe.
+- **Tells speakers apart.** Several people on the call get their own labels (Speaker 1, Speaker 2…),
+  which you can rename to real names in one click, with suggestions from the calendar invite.
 - **No headphones needed.** When your microphone picks up the other people from your speakers,
   MeetNotes removes that echo from your track, so lines are not duplicated.
 - **Scheduled meetings** from the macOS Calendar (Google, iCloud, Exchange, Outlook): record in one
@@ -68,7 +70,8 @@ The folder can be changed in Settings.
 
 ## Known limitations
 
-- All remote participants are labeled as one speaker ("Others").
+- Speakers are told apart by voice, not by name: rename them in the transcript. Very similar voices,
+  or people sharing one microphone in a room, may be merged.
 - The transcript appears after the recording stops, not live.
 - If you and the other side talk over each other without headphones, a few of your words can be lost.
 
@@ -97,6 +100,7 @@ Code layout:
 | `Sources/MeetNotesCore/Recorder.swift` | Core Audio process tap for call audio, AVAudioEngine for the mic |
 | `Sources/MeetNotesCore/EchoRemoval.swift` | Mutes the speakers' sound picked up by the mic |
 | `Sources/MeetNotesCore/Transcriber.swift` | Parakeet through FluidAudio, speech chunking |
+| `Sources/MeetNotesCore/Diarizer.swift` | Who spoke when on the call audio (pyannote + WeSpeaker + VBx) |
 | `Sources/MeetNotesCore/Transcript.swift` | Merging tracks, dropping echo duplicates and fillers |
 | `Sources/MeetNotesCore/Calendar.swift` | Scheduled meetings from EventKit |
 | `Sources/MeetNotes/` | SwiftUI app: menu bar, meetings window, settings, updates |
@@ -120,6 +124,8 @@ issues mention the meeting language and whether you used headphones. Translation
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 - [FluidAudio](https://github.com/FluidInference/FluidAudio) by FluidInference (Core ML port of Parakeet),
   Apache License 2.0
+- [pyannote](https://github.com/pyannote/pyannote-audio) segmentation and
+  [WeSpeaker](https://github.com/wenet-e2e/wespeaker) speaker embeddings (through FluidAudio) for telling speakers apart
 - [Sparkle](https://sparkle-project.org) for updates, MIT License
 
 ## License

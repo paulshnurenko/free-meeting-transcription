@@ -4,6 +4,7 @@ public enum Pipeline {
     public enum Stage: Sendable {
         case loadingAudio
         case removingEcho
+        case identifyingSpeakers(fraction: Double)
         case transcribing(speaker: String, fraction: Double)
         case saving
     }
@@ -12,6 +13,7 @@ public enum Pipeline {
     public static func process(
         _ meeting: Meeting,
         transcriber: Transcriber,
+        diarizer: SpeakerDiarizer? = nil,
         me: String,
         others: String,
         stage: (@Sendable (Stage) -> Void)? = nil
@@ -31,7 +33,15 @@ public enum Pipeline {
             mine = try await transcriber.transcribe(mic, speaker: me) { stage?(.transcribing(speaker: me, fraction: $0)) }
         }
         if let system {
-            theirs = try await transcriber.transcribe(system, speaker: others) { stage?(.transcribing(speaker: others, fraction: $0)) }
+            // Several people on the call: tell their voices apart before transcribing.
+            var speakers: SpeakerTimeline?
+            if let diarizer {
+                stage?(.identifyingSpeakers(fraction: 0))
+                speakers = try await diarizer.timeline(of: system) { stage?(.identifyingSpeakers(fraction: $0)) }
+            }
+            theirs = try await transcriber.transcribe(system, speaker: others, speakers: speakers) {
+                stage?(.transcribing(speaker: others, fraction: $0))
+            }
         }
 
         stage?(.saving)

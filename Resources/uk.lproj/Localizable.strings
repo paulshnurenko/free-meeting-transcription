@@ -178,3 +178,15 @@
 "Connect…" = "Підключити…";
 "Get Started" = "Почати";
 "Done" = "Готово";
+"Telling the speakers apart" = "Розрізняю спікерів";
+"Speaker %lld" = "Спікер %lld";
+"Rename Speaker" = "Перейменувати спікера";
+"Name" = "Ім'я";
+"Rename" = "Перейменувати";
+"Cancel" = "Скасувати";
+"Every line by “%@” gets the new name." = "Усі репліки «%@» отримають нове ім'я.";
+"Rename to" = "Перейменувати на";
+"Other Name…" = "Інше ім'я…";
+"Rename this speaker" = "Перейменувати цього спікера";
+"Tell apart several people on the call" = "Розрізняти кількох людей у дзвінку";
+"Labels each remote voice as Speaker 1, Speaker 2… Click a name in a transcript to rename that speaker. Adds a few seconds per 10 minutes of audio." = "Підписує кожен голос у дзвінку як «Спікер 1», «Спікер 2»… Натисни на ім'я в транскрипті, щоб перейменувати спікера. Додає кілька секунд на кожні 10 хвилин запису.";
