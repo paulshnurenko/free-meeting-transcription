@@ -70,6 +70,8 @@ public final class Transcriber: @unchecked Sendable {
             // The vocabulary has no dash and emits <unk> for it.
             seg.text = seg.text
                 .replacingOccurrences(of: #"\s*<unk>\s*"#, with: " — ", options: .regularExpression)
+                // "кодом.. Ну", "транзакшен., є": keep the last mark of a doubled one.
+                .replacingOccurrences(of: #"[.,]+(?=[.,?!])"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: CharacterSet(charactersIn: " —"))
             if !seg.text.isEmpty { segments.append(seg) }
             current = nil

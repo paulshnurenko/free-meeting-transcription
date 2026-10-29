@@ -29,8 +29,18 @@ public enum Transcript {
 
     /// Interleaves both tracks by time and joins consecutive lines of the same speaker.
     public static func combine(mic: [Segment], system: [Segment], maxGap: Double = 1.5) -> [Segment] {
-        var merged: [Segment] = []
+        let meetingScript = Script.dominant(in: (mic + system).map(\.text).joined(separator: " "))
+        var lines: [Segment] = []
         for seg in (dropEcho(mic: mic, system: system) + system).sorted(by: { $0.start < $1.start }) {
+            // A term that carries on an unfinished sentence ("…по | recurrence.") is speech, not a scrap.
+            let continues = lines.last { $0.speaker == seg.speaker }.map {
+                seg.start - $0.end <= 3 && !($0.text.last.map { ".?!".contains($0) } ?? true)
+            } ?? false
+            let term = continues && seg.text.split(separator: " ").count <= 3
+            if term || !isStray(seg.text, in: meetingScript) { lines.append(seg) }
+        }
+        var merged: [Segment] = []
+        for seg in lines {
             if var last = merged.last, last.speaker == seg.speaker,
                seg.start - last.end <= maxGap, last.end - last.start < 90 {
                 last.text += " " + seg.text
@@ -46,20 +56,9 @@ public enum Transcript {
     /// Removes mic segments that repeat what the system track said at the same time: echo that
     /// EchoRemoval let through. Compares letters rather than words, because the echo is often
     /// recognized slightly differently ("ботлнек" vs "ботл нек").
-    ///
-    /// Also drops a short line written entirely in another alphabet than the meeting, said while
-    /// the other side talks: those are scraps of echo the multilingual model guesses in the wrong
-    /// language (in a Ukrainian meeting: "So does", "That's just"). Foreign terms inside sentences,
-    /// and replies in pauses, are kept.
     static func dropEcho(mic: [Segment], system: [Segment], window: Double = 2) -> [Segment] {
         guard !system.isEmpty else { return mic }
-        let meetingScript = Script.dominant(in: (mic + system).map(\.text).joined(separator: " "))
         return mic.filter { seg in
-            let talking = system.contains { $0.start < seg.end - 0.3 && $0.end > seg.start + 0.3 }
-            if talking, let meetingScript, seg.text.split(separator: " ").count <= 3,
-               Script.count(meetingScript, in: seg.text) == 0 {
-                return false
-            }
             let overlapping = system.filter { $0.start < seg.end + window && $0.end > seg.start - window }
             let micText = letters(seg.text)
             guard !overlapping.isEmpty, micText.count >= 6 else { return true }
@@ -67,6 +66,17 @@ public enum Transcript {
             let matched = matchingBlocks(micText, systemText).filter { $0 >= 3 }.reduce(0, +)
             return Double(matched) / Double(micText.count) < 0.7
         }
+    }
+
+    /// A short line written entirely in another alphabet than the meeting: a scrap of crosstalk,
+    /// echo or "угу" that the multilingual model guessed in the wrong language (in a Ukrainian
+    /// meeting: "No to one best rock", "Uh, mm-hmm, dawg"). Too short a chunk does not tell it the
+    /// language. Foreign terms inside sentences and longer foreign passages are kept.
+    static func isStray(_ text: String, in meetingScript: Script?, maxWords: Int = 6) -> Bool {
+        guard let meetingScript else { return false }
+        let other: Script = meetingScript == .latin ? .cyrillic : .latin
+        return Script.count(meetingScript, in: text) == 0 && Script.count(other, in: text) > 0
+            && text.split(separator: " ").count <= maxWords
     }
 
     enum Script {
