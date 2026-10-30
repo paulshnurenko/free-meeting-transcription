@@ -34,23 +34,71 @@ public final class Transcriber: @unchecked Sendable {
         guard !Audio.isSilent(samples) else { return [] }
         let chunks = Audio.speechChunks(samples)
         var segments: [Segment] = []
+        var unheard: [(Double, Double)] = []
         for (index, (start, end)) in chunks.enumerated() {
             progress?(Double(index) / Double(chunks.count))
-            let piece = Array(samples[Int(start * Double(Audio.sampleRate))..<min(samples.count, Int(end * Double(Audio.sampleRate)))])
-            // The model needs at least a second of audio; pad short replies with silence.
-            let padded = piece.count < Audio.sampleRate ? piece + [Float](repeating: 0, count: Audio.sampleRate - piece.count) : piece
-            var state = TdtDecoderState.make()
-            let result = try await manager.transcribe(padded, decoderState: &state)
-            let lines = Self.sentences(from: result.tokenTimings ?? [], speaker: speaker) { time in
-                speakers?.speaker(at: start + time)
-            }
-            for var seg in lines where !Transcript.isFiller(seg.text) {
-                seg.start = ((start + seg.start) * 100).rounded() / 100
-                seg.end = ((start + seg.end) * 100).rounded() / 100
-                segments.append(seg)
-            }
+            let (lines, gaps) = try await recognize(samples, from: start, to: end, speaker: speaker, speakers: speakers)
+            segments += lines
+            unheard += gaps
+        }
+
+        // In a long chunk the model sometimes skips whole phrases, which it hears fine on their own.
+        guard !unheard.isEmpty else { return segments }
+        let regions = Audio.speechRegions(samples)
+        for (start, end) in Self.overlaps(unheard, regions).filter({ $0.1 - $0.0 >= Self.minUnheard }) {
+            segments += try await recognize(samples, from: start, to: end, speaker: speaker, speakers: speakers).lines
         }
         return segments
+    }
+
+    /// Stretches without a recognized word shorter than this are ordinary pauses.
+    static let minUnheard = 3.0
+
+    /// Sentences heard between `start` and `end` (seconds from the start of `samples`), and the
+    /// stretches of it where no word was recognized.
+    private func recognize(
+        _ samples: [Float],
+        from start: Double,
+        to end: Double,
+        speaker: String,
+        speakers: SpeakerTimeline?
+    ) async throws -> (lines: [Segment], gaps: [(Double, Double)]) {
+        let piece = Array(samples[Int(start * Double(Audio.sampleRate))..<min(samples.count, Int(end * Double(Audio.sampleRate)))])
+        // The model needs at least a second of audio; pad short replies with silence.
+        let padded = piece.count < Audio.sampleRate ? piece + [Float](repeating: 0, count: Audio.sampleRate - piece.count) : piece
+        var state = TdtDecoderState.make()
+        let result = try await manager.transcribe(padded, decoderState: &state)
+        let tokens = result.tokenTimings ?? []
+        let lines = Self.sentences(from: tokens, speaker: speaker) { time in
+            speakers?.speaker(at: start + time)
+        }
+        var heard: [Segment] = []
+        for var seg in lines where !Transcript.isFiller(seg.text) {
+            seg.start = ((start + seg.start) * 100).rounded() / 100
+            seg.end = ((start + seg.end) * 100).rounded() / 100
+            heard.append(seg)
+        }
+
+        var gaps: [(Double, Double)] = []
+        var cursor = start
+        for token in tokens {
+            if start + token.startTime - cursor >= Self.minUnheard { gaps.append((cursor, start + token.startTime)) }
+            cursor = max(cursor, start + token.endTime)
+        }
+        if end - cursor >= Self.minUnheard { gaps.append((cursor, end)) }
+        return (heard, gaps)
+    }
+
+    /// Intersections of two sorted lists of time ranges.
+    static func overlaps(_ a: [(Double, Double)], _ b: [(Double, Double)]) -> [(Double, Double)] {
+        var result: [(Double, Double)] = []
+        var i = 0, j = 0
+        while i < a.count, j < b.count {
+            let start = max(a[i].0, b[j].0), end = min(a[i].1, b[j].1)
+            if start < end { result.append((start, end)) }
+            if a[i].1 < b[j].1 { i += 1 } else { j += 1 }
+        }
+        return result
     }
 
     /// Groups tokens into sentences: split after . ? ! at a word boundary, on pauses longer than

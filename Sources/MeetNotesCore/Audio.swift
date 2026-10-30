@@ -67,15 +67,55 @@ public enum Audio {
         minSpeech: Double = 0.25,
         pad: Double = 0.2
     ) -> [(Double, Double)] {
-        let frame = sampleRate * 3 / 100  // 30 ms
-        let step = Double(frame) / Double(sampleRate)
-        let n = samples.count / frame
-        guard n > 0 else { return [] }
-        let db: [Float] = samples.withUnsafeBufferPointer { buffer in
-            (0..<n).map { i in
+        let db = frameLevels(samples)
+        guard !db.isEmpty else { return [] }
+        let merged = speechRegions(db, total: Double(samples.count) / Double(sampleRate), minSpeech: minSpeech, pad: pad)
+
+        // Group nearby regions into chunks no longer than maxLength.
+        var chunks: [(Double, Double)] = []
+        for (s, e) in merged {
+            if let last = chunks.last, s - last.1 <= joinGap, e - last.0 <= maxLength {
+                chunks[chunks.count - 1].1 = e
+            } else {
+                chunks.append((s, e))
+            }
+        }
+
+        var result: [(Double, Double)] = []
+        for (chunkStart, e) in chunks {
+            var s = chunkStart
+            while e - s > maxLength {
+                // Cut at the quietest frame in the second half of the window.
+                let a = Int((s + maxLength / 2) / frameStep), b = max(a + 1, min(db.count, Int((s + maxLength) / frameStep)))
+                let cut = Double(db[a..<b].indices.min { db[$0] < db[$1] }!) * frameStep
+                result.append((s, cut))
+                s = cut
+            }
+            result.append((s, e))
+        }
+        return result
+    }
+
+    /// Stretches of `samples` loud enough to be speech, in seconds.
+    public static func speechRegions(_ samples: [Float], minSpeech: Double = 0.25, pad: Double = 0.2) -> [(Double, Double)] {
+        speechRegions(frameLevels(samples), total: Double(samples.count) / Double(sampleRate), minSpeech: minSpeech, pad: pad)
+    }
+
+    private static let frameLength = sampleRate * 3 / 100  // 30 ms
+    private static let frameStep = Double(frameLength) / Double(sampleRate)
+
+    private static func frameLevels(_ samples: [Float]) -> [Float] {
+        let frame = frameLength
+        return samples.withUnsafeBufferPointer { buffer in
+            (0..<samples.count / frame).map { i in
                 20 * log10(vDSP.rootMeanSquare(UnsafeBufferPointer(rebasing: buffer[i * frame..<(i + 1) * frame])) + 1e-10)
             }
         }
+    }
+
+    private static func speechRegions(_ db: [Float], total: Double, minSpeech: Double, pad: Double) -> [(Double, Double)] {
+        let n = db.count
+        let step = frameStep
         // Ignore digital silence (muted echo, padding) when estimating the noise floor.
         let audible = db.filter { $0 > -150 }.sorted()
         let noise = audible.isEmpty ? -60 : audible[Int(Double(audible.count - 1) * 0.05)]
@@ -101,32 +141,7 @@ public enum Audio {
                 merged.append(r)
             }
         }
-        let total = Double(samples.count) / Double(sampleRate)
-        merged = merged.filter { $0.1 - $0.0 >= minSpeech }.map { (max(0, $0.0 - pad), min(total, $0.1 + pad)) }
-
-        // Group nearby regions into chunks no longer than maxLength.
-        var chunks: [(Double, Double)] = []
-        for (s, e) in merged {
-            if let last = chunks.last, s - last.1 <= joinGap, e - last.0 <= maxLength {
-                chunks[chunks.count - 1].1 = e
-            } else {
-                chunks.append((s, e))
-            }
-        }
-
-        var result: [(Double, Double)] = []
-        for (chunkStart, e) in chunks {
-            var s = chunkStart
-            while e - s > maxLength {
-                // Cut at the quietest frame in the second half of the window.
-                let a = Int((s + maxLength / 2) / step), b = max(a + 1, min(n, Int((s + maxLength) / step)))
-                let cut = Double(db[a..<b].indices.min { db[$0] < db[$1] }!) * step
-                result.append((s, cut))
-                s = cut
-            }
-            result.append((s, e))
-        }
-        return result
+        return merged.filter { $0.1 - $0.0 >= minSpeech }.map { (max(0, $0.0 - pad), min(total, $0.1 + pad)) }
     }
 
     public static func isSilent(_ samples: [Float]) -> Bool {
