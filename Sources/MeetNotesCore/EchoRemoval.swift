@@ -25,16 +25,23 @@ public enum EchoRemoval {
         let micDB = frameDB(mic, frames: n)
         let sysDB = frameDB(system, frames: n)
 
-        // Echo delay: the lag at which the two loudness envelopes line up best.
-        let lags = (0..<Int(maxLag * 100)).map { lag in
-            correlation(Array(micDB[lag...]), Array(sysDB[..<(n - lag)]))
+        // Echo delay: the lag at which the two loudness envelopes line up best. It can be negative:
+        // the tracks' clocks differ by some tens of ms from one recording to the next, so the mic
+        // may run ahead of the system track although the echo physically comes later.
+        let reach = Int(maxLag * 100)
+        let lags = Array(-reach...reach)
+        let scores = lags.map { lag in
+            lag >= 0
+                ? correlation(Array(micDB[lag...]), Array(sysDB[..<(n - lag)]))
+                : correlation(Array(micDB[..<(n + lag)]), Array(sysDB[(-lag)...]))
         }
-        guard let best = lags.indices.max(by: { lags[$0] < lags[$1] }), lags[best] >= 0.3 else {
+        guard let index = scores.indices.max(by: { scores[$0] < scores[$1] }), scores[index] >= 0.3 else {
             return mic  // the mic does not hear the speakers (headphones)
         }
+        let best = lags[index]
 
         var shifted = [Float](repeating: floor, count: n)
-        for i in best..<n { shifted[i] = sysDB[i - best] }
+        for i in max(0, best)..<min(n, n + best) { shifted[i] = sysDB[i - best] }
         // The room keeps ringing a little after the sound stops; take the loudest recent frame.
         let tailFrames = Int(tail * 100)
         var predicted = [Float](repeating: floor, count: n)
