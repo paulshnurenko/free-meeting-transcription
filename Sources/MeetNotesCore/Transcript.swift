@@ -55,13 +55,17 @@ public enum Transcript {
 
     /// Removes mic segments that repeat what the system track said at the same time: echo that
     /// EchoRemoval let through. Compares letters rather than words, because the echo is often
-    /// recognized slightly differently ("ботлнек" vs "ботл нек").
-    static func dropEcho(mic: [Segment], system: [Segment], window: Double = 2) -> [Segment] {
+    /// recognized slightly differently ("ботлнек" vs "ботл нек"). Echo sounds at the same time as
+    /// the original, so only lines spoken mostly during the other side's speech count: a reply the
+    /// other person repeats a moment later ("For three years." → "Three years.") is kept.
+    static func dropEcho(mic: [Segment], system: [Segment], slack: Double = 0.5) -> [Segment] {
         guard !system.isEmpty else { return mic }
         return mic.filter { seg in
-            let overlapping = system.filter { $0.start < seg.end + window && $0.end > seg.start - window }
+            let overlapping = system.filter { $0.start < seg.end + slack && $0.end > seg.start - slack }
             let micText = letters(seg.text)
             guard !overlapping.isEmpty, micText.count >= 6 else { return true }
+            let simultaneous = overlapping.map { min($0.end + slack, seg.end) - max($0.start - slack, seg.start) }
+            guard simultaneous.reduce(0, +) >= 0.5 * (seg.end - seg.start) else { return true }
             let systemText = letters(overlapping.map(\.text).joined(separator: " "))
             let matched = matchingBlocks(micText, systemText).filter { $0 >= 3 }.reduce(0, +)
             return Double(matched) / Double(micText.count) < 0.7
