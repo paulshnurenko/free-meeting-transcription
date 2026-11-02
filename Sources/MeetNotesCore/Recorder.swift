@@ -18,12 +18,20 @@ public final class Recorder: @unchecked Sendable {
         case resumed
         /// Reconnecting failed; the files are closed and keep what was recorded.
         case failed(String)
+        /// The call has been silent for `callEndsAfter` seconds. `lastSound` is when it was last
+        /// heard, in seconds from the start of the recording.
+        case callEnded(lastSound: Double)
     }
 
     public var onEvent: (@Sendable (Event) -> Void)?
+    /// Seconds of silence in the call audio, once there has been some, after which the call
+    /// counts as ended. Nil never ends it (meetings in a room have no call audio at all).
+    public var callEndsAfter: Double?
 
     private let system: TrackWriter
     private let mic: TrackWriter?
+    private let urls: [URL]
+    private var callEndReported = false
     /// Every write to the files happens on this queue.
     private let queue = DispatchQueue(label: "meetnotes.recorder", qos: .userInitiated)
     private var startSeconds: Double = 0
@@ -37,6 +45,7 @@ public final class Recorder: @unchecked Sendable {
     public init(systemURL: URL, micURL: URL?) throws {
         system = try TrackWriter(url: systemURL)
         mic = try micURL.map { try TrackWriter(url: $0) }
+        urls = [systemURL] + (micURL.map { [$0] } ?? [])
     }
 
     public func start() async throws {
@@ -58,12 +67,22 @@ public final class Recorder: @unchecked Sendable {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             self.onEvent?(.levels(system: self.system.takePeak(), mic: self.mic?.takePeak()))
+            // Host time stands still while the Mac sleeps, so sleep does not count as silence.
+            let now = self.seconds(atHostTime: mach_absolute_time())
+            if let limit = self.callEndsAfter, !self.callEndReported,
+               let last = self.system.lastSound, now - last >= limit {
+                self.callEndReported = true
+                self.onEvent?(.callEnded(lastSound: last))
+            }
         }
         timer.resume()
         levelTimer = timer
     }
 
-    public func stop() async {
+    /// Closes the files, cut at `keepingUntil` seconds if given, and returns how many seconds
+    /// they hold.
+    @discardableResult
+    public func stop(keepingUntil keep: Double? = nil) async -> Double {
         queue.sync { stopping = true }
         levelTimer?.cancel()
         if let outputListener {
@@ -80,6 +99,14 @@ public final class Recorder: @unchecked Sendable {
         queue.sync {
             system.close(padTo: end)
             mic?.close(padTo: end)
+        }
+        guard let keep, keep < end else { return end }
+        do {
+            for url in urls { try Audio.truncate(url, to: keep) }
+            return keep
+        } catch {
+            NSLog("MeetNotes: trimming failed: \(error.localizedDescription)")
+            return end
         }
     }
 
@@ -332,6 +359,10 @@ final class TrackWriter {
     private var converterSource: AVAudioFormat?
     private var framesWritten: AVAudioFramePosition = 0
     private var peak: Float = 0
+    /// Seconds from the start at the end of the last buffer with sound in it.
+    private(set) var lastSound: Double?
+    /// About -50 dB: a quiet call between phrases stays well below, speech is far above.
+    private static let soundPeak: Float = 0.003
 
     init(url: URL) throws {
         let settings: [String: Any] = [
@@ -353,10 +384,13 @@ final class TrackWriter {
         if expected - framesWritten > AVAudioFramePosition(Audio.sampleRate / 10) {
             writeSilence(frames: expected - framesWritten)
         }
+        var bufferPeak: Float = 0
         if let data = output.floatChannelData?[0] {
-            for i in 0..<Int(output.frameLength) { peak = max(peak, abs(data[i])) }
+            for i in 0..<Int(output.frameLength) { bufferPeak = max(bufferPeak, abs(data[i])) }
         }
+        peak = max(peak, bufferPeak)
         write(output)
+        if bufferPeak > Self.soundPeak { lastSound = Double(framesWritten) / Double(Audio.sampleRate) }
     }
 
     func takePeak() -> Float {

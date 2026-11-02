@@ -19,6 +19,7 @@ struct GeneralSettings: View {
     @AppStorage(SettingsKey.me) private var me = String(localized: "Me")
     @AppStorage(SettingsKey.others) private var others = String(localized: "Others")
     @AppStorage(SettingsKey.storagePath) private var storagePath = MeetingStore.defaultRoot.path
+    @AppStorage(SettingsKey.stopWhenCallEnds) private var stopWhenCallEnds = true
 
     var body: some View {
         Form {
@@ -29,6 +30,13 @@ struct GeneralSettings: View {
                 Text("Speaker Names")
             } footer: {
                 Text("How the two sides are labeled in new transcripts.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Stop recording when the call ends", isOn: $stopWhenCallEnds)
+            } footer: {
+                Text("After 10 minutes without call audio, recording stops and the silence at the end is cut off. Meetings without a call keep recording until you stop them.")
                     .foregroundStyle(.secondary)
             }
 

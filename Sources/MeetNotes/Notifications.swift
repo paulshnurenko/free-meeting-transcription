@@ -46,6 +46,15 @@ enum Notifications {
         post(content, id: meeting.folder.path)
     }
 
+    /// Recording was left running after the call; shown even in front, since nobody clicked Stop.
+    static func recordingStopped(_ meeting: Meeting) {
+        let content = UNMutableNotificationContent()
+        content.title = meeting.displayTitle
+        content.body = String(localized: "The call has been silent for 10 minutes, so recording stopped.")
+        content.userInfo = ["meetingPath": meeting.folder.path]
+        post(content, id: meeting.folder.path + "#stopped")
+    }
+
     private static func post(_ content: UNNotificationContent, id: String) {
         let center = UNUserNotificationCenter.current()
         // Asks the first time; later calls return the saved answer.

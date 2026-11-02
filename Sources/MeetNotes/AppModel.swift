@@ -15,6 +15,7 @@ enum SettingsKey {
     static let hasSeenWelcome = "hasSeenWelcome"
     static let lastMeeting = "lastMeeting"
     static let distinguishSpeakers = "distinguishSpeakers"
+    static let stopWhenCallEnds = "stopWhenCallEnds"
 }
 
 /// Where a meeting is in its life: recording → queued → processing → ready (or failed).
@@ -169,6 +170,7 @@ final class AppModel {
     init() {
         UserDefaults.standard.register(defaults: [
             SettingsKey.calendarEnabled: true, SettingsKey.remindOnStart: true, SettingsKey.distinguishSpeakers: true,
+            SettingsKey.stopWhenCallEnds: true,
         ])
         reload()
         if let path = UserDefaults.standard.string(forKey: SettingsKey.lastMeeting),
@@ -240,6 +242,14 @@ final class AppModel {
             recorder.onEvent = { [weak self] event in
                 Task { @MainActor in self?.handle(event) }
             }
+            if UserDefaults.standard.bool(forKey: SettingsKey.stopWhenCallEnds) {
+                recorder.callEndsAfter = Self.callEndsAfter
+            }
+            #if DEBUG
+            // For testing: `-debugCallEndsAfter 20` ends the call after 20 seconds of silence.
+            let debugCallEndsAfter = UserDefaults.standard.double(forKey: "debugCallEndsAfter")
+            if debugCallEndsAfter > 0 { recorder.callEndsAfter = debugCallEndsAfter }
+            #endif
             try await recorder.start()
             self.recorder = recorder
             recording = Recording(meeting: meeting, startedAt: .now)
@@ -256,14 +266,19 @@ final class AppModel {
         }
     }
 
-    func stopRecording() async {
+    /// Silence in the call audio after which a forgotten recording stops by itself.
+    static let callEndsAfter: Double = 10 * 60
+
+    /// `keepingUntil`: seconds from the start to cut the recording at.
+    func stopRecording(keepingUntil keep: Double? = nil) async {
         guard let current = recording, let recorder else { return }
-        await recorder.stop()
+        // The length of the audio, not the time since the start: the Mac may have slept.
+        let duration = await recorder.stop(keepingUntil: keep)
         self.recorder = nil
         recording = nil
         updateMenuBarState()
         var meeting = current.meeting
-        meeting.meta.durationSec = Int(Date.now.timeIntervalSince(current.startedAt))
+        meeting.meta.durationSec = Int(duration.rounded())
         try? meeting.save()
         reload()
         enqueue(meeting)
@@ -290,6 +305,13 @@ final class AppModel {
         case .failed(let message):
             show(String(localized: "Recording stopped: \(message). What was recorded is saved."))
             Task { await stopRecording() }
+        case .callEnded(let lastSound):
+            guard let meeting = recording?.meeting else { return }
+            Task {
+                // Keep the goodbyes said after the other side went quiet, drop the room after that.
+                await stopRecording(keepingUntil: lastSound + 15)
+                Notifications.recordingStopped(meeting)
+            }
         }
     }
 

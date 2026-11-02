@@ -57,6 +57,34 @@ public enum Audio {
         try file.write(from: buffer)
     }
 
+    /// Cuts an audio file to its first `seconds`, keeping its format.
+    public static func truncate(_ url: URL, to seconds: Double) throws {
+        let source = try AVAudioFile(forReading: url)
+        let frames = AVAudioFramePosition(max(0, seconds) * source.processingFormat.sampleRate)
+        guard frames < source.length else { return }
+        // AVAudioFile picks the container by the extension, so keep it.
+        let temporary = url.deletingLastPathComponent()
+            .appending(path: ".trimmed-\(url.lastPathComponent)")
+        do {
+            let output = try AVAudioFile(
+                forWriting: temporary, settings: source.fileFormat.settings,
+                commonFormat: source.processingFormat.commonFormat, interleaved: source.processingFormat.isInterleaved)
+            let buffer = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: AVAudioFrameCount(sampleRate * 10))!
+            var remaining = frames
+            while remaining > 0 {
+                try source.read(into: buffer, frameCount: AVAudioFrameCount(min(remaining, AVAudioFramePosition(buffer.frameCapacity))))
+                guard buffer.frameLength > 0 else { break }
+                try output.write(from: buffer)
+                remaining -= AVAudioFramePosition(buffer.frameLength)
+            }
+            output.close()
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+    }
+
     /// (start, end) seconds of stretches that contain speech, each at most `maxLength` long.
     /// Energy-based: recognizing speech-only chunks one by one keeps the model on track; fed long
     /// silences (muted echo) it drifts into other languages on the short replies in between.
