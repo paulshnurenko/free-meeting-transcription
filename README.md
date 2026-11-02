@@ -16,6 +16,19 @@ It is a free, open-source alternative to cloud meeting assistants such as Notion
 Fireflies, except that everything runs locally: no account, no server, no subscription, and recordings
 and transcripts never leave your Mac.
 
+<p align="center"><img src="docs/screenshot-transcript.png" width="900" alt="A meeting transcript in MeetNotes, with each line labeled by speaker and time"></p>
+
+Start and stop recording from the menu bar. When you stop, the transcript is made right away, with no
+button to press.
+
+<p align="center">
+  <img src="docs/screenshot-menu-bar.png" width="360" alt="The MeetNotes menu bar panel with a Start Recording button">
+  &nbsp;
+  <img src="docs/screenshot-settings.png" width="460" alt="Transcription settings: speaker separation and the on-device Parakeet model">
+</p>
+
+<sub>Screenshots show made-up demo meetings.</sub>
+
 ## Features
 
 - **Works with any call app.** It records system audio, so there is nothing to install in Zoom or Meet
