@@ -12,6 +12,10 @@ Teams, Slack or anything else) as two separate tracks, then transcribes them on 
 NVIDIA's Parakeet model running on the Neural Engine. You get a timestamped transcript with who said what,
 saved as plain files you own.
 
+It is a free, open-source alternative to cloud meeting assistants such as Notion AI Meeting Notes, Otter or
+Fireflies, except that everything runs locally: no account, no server, no subscription, and recordings
+and transcripts never leave your Mac.
+
 ## Features
 
 - **Works with any call app.** It records system audio, so there is nothing to install in Zoom or Meet
@@ -25,6 +29,8 @@ saved as plain files you own.
 - **Scheduled meetings** from the macOS Calendar (Google, iCloud, Exchange, Outlook): record in one
   click with the event's title and attendees, and get a notification with a Record button when a
   meeting starts.
+- **Stops by itself** when the call ends: after 10 minutes without call audio, recording stops and the
+  silence at the end is cut off, so a forgotten recording does not run all night.
 - **Plain files.** Each meeting is a folder in `~/MeetingNotes` with the audio, `transcript.md` and
   `transcript.json`, ready for your notes app or an AI assistant.
 - **Never records the screen.** It asks only for the microphone and "System Audio Recording Only".
@@ -54,6 +60,67 @@ The only network requests are the one-time model download from Hugging Face and 
 this repository's releases.
 
 Recording other people may require their consent where you live. Let participants know when you record.
+
+## How it works
+
+MeetNotes is a single native Swift app with no server side. Recording happens in real time; everything
+else runs once the recording stops, as a pipeline over the two audio files.
+
+```mermaid
+flowchart LR
+    subgraph rec["While recording"]
+        mic["Microphone<br/>AVAudioEngine"] --> micwav[("mic.wav")]
+        tap["Call audio<br/>Core Audio process tap"] --> syswav[("system.wav")]
+    end
+    subgraph pipe["After the recording stops (on device)"]
+        echo["Echo removal"]
+        diar["Speaker diarization<br/>pyannote · WeSpeaker · VBx"]
+        asr["Speech recognition<br/>Parakeet TDT 0.6B v3<br/>Core ML · Neural Engine"]
+        merge["Merge and clean up"]
+    end
+    micwav --> echo --> asr
+    syswav --> echo
+    syswav --> diar --> asr
+    syswav --> asr
+    asr --> merge --> out[("transcript.md<br/>transcript.json")]
+```
+
+1. **Recording.** The microphone is captured with AVAudioEngine, and the sound of every other app with a
+   Core Audio process tap ("System Audio Recording Only" permission, no screen capture).
+   Both tracks are placed on one host clock and written as 16 kHz mono WAV, so they stay aligned however
+   long the meeting is. A level meter on the call track drives the automatic stop.
+2. **Echo removal.** Without headphones the mic also hears the speakers. MeetNotes finds the delay and
+   loudness at which the call track shows up in the mic track, predicts that echo frame by frame and mutes
+   the mic where it holds nothing louder than the echo. Your own voice is louder, so it stays, even when
+   you talk over someone.
+3. **Speaker diarization** (call track only, optional). pyannote segmentation, WeSpeaker embeddings and
+   VBx clustering label each remote voice as Speaker 1, Speaker 2… Your side needs none: it is the mic.
+4. **Speech recognition.** Each track is cut into speech-only chunks of up to 30 seconds by energy, and
+   every chunk is recognized by NVIDIA Parakeet TDT 0.6B v3 through FluidAudio on the Neural Engine
+   (roughly an hour of audio per minute). Stretches the model skipped inside a long chunk get a second pass
+   on their own.
+5. **Merge and clean up.** Lines from both tracks are interleaved by time. Mic lines that repeat what the
+   call said at the same moment (echo the first step let through), fillers, and short scraps recognized in
+   the wrong alphabet are dropped, and consecutive lines of one speaker are joined.
+
+The only network access is the one-time model download (Hugging Face) and the update check (Sparkle,
+reading this repository's latest release). Meetings, settings and models stay on disk.
+
+The code is split into a UI-free library and two front ends:
+
+| Path | What it does |
+|---|---|
+| `Sources/MeetNotesCore/Recorder.swift` | Core Audio process tap for call audio, AVAudioEngine for the mic, auto-stop |
+| `Sources/MeetNotesCore/EchoRemoval.swift` | Mutes the speakers' sound picked up by the mic |
+| `Sources/MeetNotesCore/Diarizer.swift` | Who spoke when on the call audio (pyannote + WeSpeaker + VBx) |
+| `Sources/MeetNotesCore/Transcriber.swift` | Parakeet through FluidAudio, speech chunking, second pass |
+| `Sources/MeetNotesCore/Transcript.swift` | Merging tracks, dropping echo duplicates and fillers |
+| `Sources/MeetNotesCore/Pipeline.swift` | Runs the steps above for one meeting folder |
+| `Sources/MeetNotesCore/Meeting.swift` | Meeting folders and their metadata |
+| `Sources/MeetNotesCore/Calendar.swift` | Scheduled meetings from EventKit |
+| `Sources/MeetNotes/` | SwiftUI app: menu bar, meetings window, settings, notifications, updates |
+| `Sources/MeetNotesCLI/` | `meetnotes-cli`: transcribe a meeting folder from the terminal |
+| `Resources/uk.lproj/` | Ukrainian translation |
 
 ## Meeting folders
 
@@ -92,19 +159,6 @@ To re-transcribe a recorded meeting without the UI:
 ```bash
 swift run meetnotes-cli process ~/MeetingNotes/<meeting folder>
 ```
-
-Code layout:
-
-| Path | What it does |
-|---|---|
-| `Sources/MeetNotesCore/Recorder.swift` | Core Audio process tap for call audio, AVAudioEngine for the mic |
-| `Sources/MeetNotesCore/EchoRemoval.swift` | Mutes the speakers' sound picked up by the mic |
-| `Sources/MeetNotesCore/Transcriber.swift` | Parakeet through FluidAudio, speech chunking |
-| `Sources/MeetNotesCore/Diarizer.swift` | Who spoke when on the call audio (pyannote + WeSpeaker + VBx) |
-| `Sources/MeetNotesCore/Transcript.swift` | Merging tracks, dropping echo duplicates and fillers |
-| `Sources/MeetNotesCore/Calendar.swift` | Scheduled meetings from EventKit |
-| `Sources/MeetNotes/` | SwiftUI app: menu bar, meetings window, settings, updates |
-| `Resources/uk.lproj/` | Ukrainian translation |
 
 ### Releasing
 
