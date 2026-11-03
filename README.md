@@ -5,6 +5,9 @@
 <p align="center">Free, private meeting transcription for macOS.<br>
 No bot joins your call, no audio leaves your Mac.</p>
 
+<p align="center"><a href="https://paulshnurenko.github.io/free-meeting-transcription/">Website</a> ·
+<a href="https://github.com/paulshnurenko/free-meeting-transcription/releases/latest">Download</a></p>
+
 ---
 
 MeetNotes records your side (the microphone) and everyone else (the call audio from Zoom, Google Meet,
