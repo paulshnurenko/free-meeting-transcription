@@ -1,6 +1,6 @@
-<p align="center"><img src="Resources/AppIcon-preview.png" width="128" alt="MeetNotes icon"></p>
+<p align="center"><img src="Resources/AppIcon-preview.png" width="128" alt="Undertone icon"></p>
 
-<h1 align="center">MeetNotes</h1>
+<h1 align="center">Undertone</h1>
 
 <p align="center">Free, private meeting transcription for macOS.<br>
 No bot joins your call, no audio leaves your Mac.</p>
@@ -8,9 +8,11 @@ No bot joins your call, no audio leaves your Mac.</p>
 <p align="center"><a href="https://paulshnurenko.github.io/free-meeting-transcription/">Website</a> ·
 <a href="https://github.com/paulshnurenko/free-meeting-transcription/releases/latest">Download</a></p>
 
+<p align="center"><sub>Called MeetNotes until November 2026. Version 1.0 still shows the old name; the next update brings the new one.</sub></p>
+
 ---
 
-MeetNotes records your side (the microphone) and everyone else (the call audio from Zoom, Google Meet,
+Undertone records your side (the microphone) and everyone else (the call audio from Zoom, Google Meet,
 Teams, Slack or anything else) as two separate tracks, then transcribes them on your Mac with
 NVIDIA's Parakeet model running on the Neural Engine. You get a timestamped transcript with who said what,
 saved as plain files you own.
@@ -19,13 +21,13 @@ It is a free, open-source alternative to cloud meeting assistants such as Notion
 Fireflies, except that everything runs locally: no account, no server, no subscription, and recordings
 and transcripts never leave your Mac.
 
-<p align="center"><img src="docs/screenshot-transcript.png" width="900" alt="A meeting transcript in MeetNotes, with each line labeled by speaker and time"></p>
+<p align="center"><img src="docs/screenshot-transcript.png" width="900" alt="A meeting transcript in Undertone, with each line labeled by speaker and time"></p>
 
 Start and stop recording from the menu bar. When you stop, the transcript is made right away, with no
 button to press.
 
 <p align="center">
-  <img src="docs/screenshot-menu-bar.png" width="360" alt="The MeetNotes menu bar panel with a Start Recording button">
+  <img src="docs/screenshot-menu-bar.png" width="360" alt="The Undertone menu bar panel with a Start Recording button">
   &nbsp;
   <img src="docs/screenshot-settings.png" width="460" alt="Transcription settings: speaker separation and the on-device Parakeet model">
 </p>
@@ -41,7 +43,7 @@ button to press.
 - **Tells speakers apart.** Several people on the call get their own labels (Speaker 1, Speaker 2…),
   which you can rename to real names in one click, with suggestions from the calendar invite.
 - **No headphones needed.** When your microphone picks up the other people from your speakers,
-  MeetNotes removes that echo from your track, so lines are not duplicated.
+  Undertone removes that echo from your track, so lines are not duplicated.
 - **Scheduled meetings** from the macOS Calendar (Google, iCloud, Exchange, Outlook): record in one
   click with the event's title and attendees, and get a notification with a Record button when a
   meeting starts.
@@ -54,9 +56,9 @@ button to press.
 
 ## Install
 
-1. Download the latest `MeetNotes-<version>.dmg` from
+1. Download the latest `Undertone-<version>.dmg` from
    [Releases](https://github.com/paulshnurenko/free-meeting-transcription/releases/latest).
-2. Open it and drag MeetNotes to Applications.
+2. Open it and drag Undertone to Applications.
 3. Start a recording from the menu bar. macOS asks for the **Microphone** and
    **System Audio Recording Only** permissions the first time.
 4. The first transcription downloads the speech model (about 500 MB, once).
@@ -65,13 +67,13 @@ Requires macOS 15 or later on Apple Silicon. The app is signed and notarized by 
 
 ### Google Calendar
 
-MeetNotes reads meetings from the macOS Calendar, so it needs no access to your Google account. Add the
+Undertone reads meetings from the macOS Calendar, so it needs no access to your Google account. Add the
 account in **System Settings → Internet Accounts → Google**, turn on **Calendars**, then click
-**Connect Calendar…** in MeetNotes. In Settings you can choose which calendars to show.
+**Connect Calendar…** in Undertone. In Settings you can choose which calendars to show.
 
 ## Privacy
 
-Recording, echo removal and speech recognition all run on your Mac. MeetNotes sends nothing anywhere.
+Recording, echo removal and speech recognition all run on your Mac. Undertone sends nothing anywhere.
 The only network requests are the one-time model download from Hugging Face and update checks against
 this repository's releases.
 
@@ -79,7 +81,7 @@ Recording other people may require their consent where you live. Let participant
 
 ## How it works
 
-MeetNotes is a single native Swift app with no server side. Recording happens in real time; everything
+Undertone is a single native Swift app with no server side. Recording happens in real time; everything
 else runs once the recording stops, as a pipeline over the two audio files.
 
 ```mermaid
@@ -105,7 +107,7 @@ flowchart LR
    Core Audio process tap ("System Audio Recording Only" permission, no screen capture).
    Both tracks are placed on one host clock and written as 16 kHz mono WAV, so they stay aligned however
    long the meeting is. A level meter on the call track drives the automatic stop.
-2. **Echo removal.** Without headphones the mic also hears the speakers. MeetNotes finds the delay and
+2. **Echo removal.** Without headphones the mic also hears the speakers. Undertone finds the delay and
    loudness at which the call track shows up in the mic track, predicts that echo frame by frame and mutes
    the mic where it holds nothing louder than the echo. Your own voice is louder, so it stays, even when
    you talk over someone.
@@ -163,8 +165,8 @@ The folder can be changed in Settings.
 You need Xcode 26 or later (with its license accepted) on an Apple Silicon Mac.
 
 ```bash
-scripts/build-app.sh        # → build/MeetNotes.app
-open build/MeetNotes.app
+scripts/build-app.sh        # → build/Undertone.app
+open build/Undertone.app
 ```
 
 The build is signed with your Developer ID certificate if you have one, otherwise ad-hoc (then macOS asks
@@ -178,7 +180,7 @@ swift run meetnotes-cli process ~/MeetingNotes/<meeting folder>
 
 ### Releasing
 
-`scripts/release.sh <version>` builds, signs, notarizes and packages `dist/MeetNotes-<version>.dmg` and
+`scripts/release.sh <version>` builds, signs, notarizes and packages `dist/Undertone-<version>.dmg` and
 `dist/appcast.xml`. Publish both as assets of a GitHub release tagged `v<version>`, not marked as a
 pre-release: the app checks the appcast of the latest release. The script header lists the one-time setup.
 

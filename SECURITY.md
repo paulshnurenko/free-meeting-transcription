@@ -9,7 +9,7 @@ a first reply within a week.
 
 ## Supported versions
 
-Only the latest release gets fixes. MeetNotes updates itself, so most people run it.
+Only the latest release gets fixes. Undertone updates itself, so most people run it.
 
 ## How releases are protected
 
@@ -17,5 +17,5 @@ Only the latest release gets fixes. MeetNotes updates itself, so most people run
 - Updates are delivered by [Sparkle](https://sparkle-project.org), which installs an update only if it is
   signed with the project's EdDSA key. The key is not stored on GitHub, so a tampered release cannot
   update installed copies.
-- MeetNotes sends no audio or transcripts anywhere. Its only network requests are the one-time model
+- Undertone sends no audio or transcripts anywhere. Its only network requests are the one-time model
   download from Hugging Face and the update check against this repository's latest release.
