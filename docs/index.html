@@ -298,6 +298,7 @@
           <li>Audio and transcripts stay in <code style="background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.2); color: #fff">~/MeetingNotes</code></li>
           <li>The only downloads: the speech model, once, and app updates</li>
           <li>Open source, so you can check every line</li>
+          <li>Google account optional (next update): read-only calendar, and only the Docs MeetNotes creates</li>
         </ul>
       </div>
       <img src="screenshot-settings.png" width="1160" height="900" alt="Transcription settings: the on-device Parakeet model, 25 languages, audio never leaves your Mac">
@@ -349,6 +350,10 @@
         <p>Not yet. The transcript is made right after you stop recording, which takes about a minute for an hour-long meeting.</p>
       </details>
       <details>
+        <summary>Does MeetNotes use my Google account?</summary>
+        <p>Only if you connect it in Settings → Google, which arrives in the next update. MeetNotes then reads your Google Calendar (read only) to show upcoming meetings with their attendees and Meet links, and, when you choose Save to Google Docs, creates a Google Doc with the transcript. It can only see the documents it created, never the rest of your Drive. Everything goes straight between your Mac and Google; nothing is sent to the developer. Details are in the <a href="privacy.html">privacy policy</a>.</p>
+      </details>
+      <details>
         <summary>Where are my recordings?</summary>
         <p>In <code>~/MeetingNotes</code>, one folder per meeting with the audio and the transcript as Markdown and JSON. You can change the folder in Settings, and delete anything any time.</p>
       </details>
@@ -382,6 +387,7 @@
       <a href="https://github.com/paulshnurenko/free-meeting-transcription">GitHub</a>
       <a href="https://github.com/paulshnurenko/free-meeting-transcription/releases">Releases</a>
       <a href="https://github.com/paulshnurenko/free-meeting-transcription/issues">Report a problem</a>
+      <a href="privacy.html">Privacy</a>
       <a href="https://github.com/paulshnurenko/free-meeting-transcription/blob/main/SECURITY.md">Security</a>
     </nav>
   </div>
