@@ -20,8 +20,9 @@ struct MeetingDetail: View {
                 TranscriptView(meeting: meeting, highlight: highlight)
             default:
                 MeetingHeader(meeting: meeting)
-                    .padding(.horizontal, 28)
-                    .padding(.top, 20)
+                    .padding(.leading, Gutter.inset)
+                    .padding(.top, 28)
+                    .readingColumn()
                 Spacer(minLength: 0)
                 stateContent(status)
                 Spacer(minLength: 0)
@@ -43,7 +44,16 @@ struct MeetingDetail: View {
                         Label("Copy Transcript", systemImage: "doc.on.doc")
                     }
                     .help("Copy the transcript")
+                    Button {
+                        TranscriptExport.save(meeting)
+                    } label: {
+                        Label("Save Transcript…", systemImage: "square.and.arrow.down")
+                    }
+                    .help("Save the transcript as a text file")
                 }
+            }
+            if #available(macOS 26, *) {
+                ToolbarSpacer(.fixed)
             }
             if status != .recording {
                 ToolbarItem(placement: .primaryAction) {
@@ -52,6 +62,7 @@ struct MeetingDetail: View {
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
+                    .menuIndicator(.hidden)
                     .help("More actions")
                 }
             }
@@ -96,92 +107,177 @@ struct MeetingDetail: View {
     }
 }
 
-/// Title (editable), date, length and attendees.
+/// Save As for a transcript: a text file in Downloads by default, or Markdown if the name ends in .md.
+@MainActor
+enum TranscriptExport {
+    static func save(_ meeting: Meeting) {
+        let panel = NSSavePanel()
+        panel.title = String(localized: "Save Transcript")
+        panel.nameFieldStringValue = meeting.displayTitle
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-") + ".txt"
+        panel.allowedContentTypes = [.plainText]
+        panel.allowsOtherFileTypes = true
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        let write = { (response: NSApplication.ModalResponse) in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try text(for: Meeting(folder: meeting.folder), markdown: url.pathExtension.lowercased() == "md")
+                    .write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: write)
+        } else {
+            write(panel.runModal())
+        }
+    }
+
+    /// Title, when and how long, then the conversation.
+    static func text(for meeting: Meeting, markdown: Bool) -> String {
+        var header: [String] = []
+        if let date = meeting.startedAt {
+            header.append(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().hour().minute()))
+        }
+        if let duration = meeting.duration { header.append(duration.spokenLength) }
+        let segments = meeting.segments()
+        let title = markdown ? "# \(meeting.displayTitle)" : meeting.displayTitle
+        let body = markdown ? Transcript.markdown(segments) : Transcript.plainText(segments)
+        return [title, header.joined(separator: " · "), body].filter { !$0.isEmpty }.joined(separator: "\n\n") + "\n"
+    }
+}
+
+/// Title (editable), when and how long, who was there, and where it is kept.
 struct MeetingHeader: View {
     @Environment(AppModel.self) private var model
     let meeting: Meeting
     @State private var title = ""
+    @State private var renaming = false
     @FocusState private var editing: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Title", text: $title, prompt: Text("Untitled Meeting"))
-                .textFieldStyle(.plain)
-                .font(.largeTitle.weight(.bold))
-                .focused($editing)
-                .onSubmit { editing = false }
-                .onChange(of: editing) { if !editing { model.rename(meeting, to: title) } }
-            HStack(spacing: 16) {
-                if let date = meeting.startedAt {
-                    Label(date.formatted(.dateTime.weekday(.wide).day().month(.wide).hour().minute()), systemImage: "calendar")
-                }
-                if let duration = meeting.duration {
-                    Label(duration.spokenLength, systemImage: "clock")
-                }
-                if let attendees = meeting.meta.attendees, !attendees.isEmpty {
-                    Label(attendees.joined(separator: ", "), systemImage: "person.2")
-                        .lineLimit(1)
-                        .help(attendees.joined(separator: "\n"))
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            // A text until clicked: as a field it would take the focus, and the title would open
+            // selected for editing.
+            if renaming {
+                TextField("Title", text: $title, prompt: Text("Untitled Meeting"))
+                    .textFieldStyle(.plain)
+                    .font(.display)
+                    .focused($editing)
+                    .onAppear { editing = true }
+                    .onSubmit { editing = false }
+                    .onExitCommand { editing = false }
+                    .onChange(of: editing) {
+                        if !editing {
+                            model.rename(meeting, to: title)
+                            renaming = false
+                        }
+                    }
+            } else {
+                Text(title.isEmpty ? String(localized: "Untitled Meeting") : title)
+                    .font(.display)
+                    .foregroundStyle(title.isEmpty ? .secondary : .primary)
+                    .onTapGesture { renaming = true }
+                    .onHover { inside in
+                        if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
+                    }
+                    .help("Click to rename")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(named: "Rename") { renaming = true }
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            if !when.isEmpty {
+                Text(when)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
+                if let attendees = meeting.meta.attendees, !attendees.isEmpty {
+                    AttendeeStack(names: attendees, limit: 3)
+                    Text(attendees.formatted(.list(type: .and)))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                PrivacyChip()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { title = meeting.meta.title ?? "" }
     }
+
+    /// "Monday, 2 November · 10:00 · 41 min"
+    private var when: String {
+        var parts: [String] = []
+        if let date = meeting.startedAt {
+            parts.append(date.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+            parts.append(date.formatted(date: .omitted, time: .shortened))
+        }
+        if let duration = meeting.duration { parts.append(duration.spokenLength) }
+        return parts.joined(separator: " · ")
+    }
 }
 
-/// Live view while recording: time, levels and a big Stop button.
+/// Live view while recording: the time, both tracks and one Stop button, nothing else.
 struct RecordingView: View {
     @Environment(AppModel.self) private var model
     let recording: AppModel.Recording
 
     var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 0) {
             Spacer()
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(.red.opacity(0.12)).frame(width: 112, height: 112)
-                    Image(systemName: "waveform")
-                        .font(.system(size: 44, weight: .medium))
-                        .foregroundStyle(.red)
-                        .symbolEffect(.variableColor.iterative, options: .repeating)
-                }
-                Text(recording.meeting.displayTitle)
-                    .font(.title2.weight(.semibold))
-                ElapsedTime(since: recording.startedAt)
-                    .font(.system(size: 52, weight: .light, design: .rounded))
-                    .contentTransition(.numericText())
+            HStack(spacing: 6) {
+                RecordingDot(size: 8)
+                Text("Recording")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.red)
             }
+            ElapsedTime(since: recording.startedAt)
+                .font(.heroTimer)
+                .contentTransition(.numericText())
+                .padding(.top, 6)
+            Text(recording.meeting.displayTitle)
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             if recording.reconnecting {
                 Label("Reconnecting to the audio device…", systemImage: "arrow.triangle.2.circlepath")
                     .foregroundStyle(.orange)
+                    .padding(.top, 16)
             }
 
-            VStack(spacing: 12) {
+            VStack(spacing: 14) {
                 if let mic = recording.micLevel {
-                    TrackLevel(title: "You", systemImage: "mic.fill", level: mic)
+                    TrackBar(title: "You", systemImage: "mic.fill", level: mic)
                 }
-                TrackLevel(title: "Call audio", systemImage: "speaker.wave.2.fill", level: recording.systemLevel)
+                TrackBar(title: "Call", systemImage: "speaker.wave.2.fill", level: recording.systemLevel)
             }
-            .padding(16)
-            .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 12))
+            .frame(width: 300)
+            .padding(.top, 36)
 
             Button {
                 Task { await model.stopRecording() }
             } label: {
                 Label("Stop Recording", systemImage: "stop.fill")
-                    .frame(minWidth: 180)
+                    .padding(.horizontal, 8)
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
             .tint(.red)
             .controlSize(.extraLarge)
+            .keyboardShortcut(".", modifiers: .command)
+            .padding(.top, 40)
 
-            Text("Audio stays on this Mac. The transcript appears when you stop.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                PrivacyChip()
+                Text("The transcript is ready a few minutes after you stop.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 18)
             Spacer()
         }
         .padding(24)
@@ -229,12 +325,12 @@ struct TranscriptView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 30) {
                 MeetingHeader(meeting: meeting)
-                Divider()
-                LazyVStack(alignment: .leading, spacing: 18) {
+                    .padding(.leading, Gutter.inset)
+                LazyVStack(alignment: .leading, spacing: 22) {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                        SegmentRow(
+                        TranscriptTurn(
                             segment: segment,
                             color: colors[segment.speaker] ?? .orange,
                             highlight: highlight,
@@ -247,10 +343,9 @@ struct TranscriptView: View {
                     }
                 }
             }
-            .frame(maxWidth: 760, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity)
+            .padding(.top, 28)
+            .padding(.bottom, 40)
+            .readingColumn()
         }
         .onAppear { segments = meeting.segments() }
         .onChange(of: model.transcriptRevision) { segments = Meeting(folder: meeting.folder).segments() }
@@ -289,7 +384,8 @@ struct TranscriptView: View {
     }
 }
 
-struct SegmentRow: View {
+/// One turn of the conversation: time in the gutter, then the speaker and what they said.
+struct TranscriptTurn: View {
     let segment: Segment
     let color: Color
     let highlight: String
@@ -298,36 +394,37 @@ struct SegmentRow: View {
     let renameCustom: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            SpeakerBadge(name: segment.speaker, color: color)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Menu {
-                        if !suggestions.isEmpty {
-                            Section("Rename to") {
-                                ForEach(suggestions, id: \.self) { name in
-                                    Button(name) { rename(name) }
-                                }
+        HStack(alignment: .firstTextBaseline, spacing: Gutter.spacing) {
+            Text(Transcript.shortTimestamp(segment.start))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .frame(width: Gutter.width, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 4) {
+                Menu {
+                    if !suggestions.isEmpty {
+                        Section("Rename to") {
+                            ForEach(suggestions, id: \.self) { name in
+                                Button(name) { rename(name) }
                             }
                         }
-                        Button("Other Name…", action: renameCustom)
-                    } label: {
+                    }
+                    Button("Other Name…", action: renameCustom)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle().fill(color).frame(width: 7, height: 7)
                         Text(segment.speaker)
                             .font(.callout.weight(.semibold))
-                            .foregroundStyle(color)
+                            .foregroundStyle(.primary)
                     }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("Rename this speaker")
-                    Text(Transcript.shortTimestamp(segment.start))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.tertiary)
                 }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Rename this speaker")
                 Text(highlighted)
-                    .font(.body)
-                    .lineSpacing(3)
+                    .font(.transcript)
+                    .lineSpacing(5)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }

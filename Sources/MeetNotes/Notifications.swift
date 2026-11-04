@@ -33,7 +33,7 @@ enum Notifications {
         post(content, id: event.id)
     }
 
-    /// Only when MeetNotes is in the background: in front, the window already shows it.
+    /// Only when Undertone is in the background: in front, the window already shows it.
     @MainActor
     static func transcriptReady(_ meeting: Meeting, empty: Bool) {
         guard !NSApp.isActive else { return }

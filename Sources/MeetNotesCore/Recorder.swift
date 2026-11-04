@@ -105,7 +105,7 @@ public final class Recorder: @unchecked Sendable {
             for url in urls { try Audio.truncate(url, to: keep) }
             return keep
         } catch {
-            NSLog("MeetNotes: trimming failed: \(error.localizedDescription)")
+            NSLog("Undertone: trimming failed: \(error.localizedDescription)")
             return end
         }
     }
@@ -227,7 +227,7 @@ final class SystemAudioTap {
     init(queue: DispatchQueue, handler: @escaping (AVAudioPCMBuffer, UInt64) -> Void) throws {
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: Self.ownProcessObject().map { [$0] } ?? [])
         description.uuid = UUID()
-        description.name = "MeetNotes"
+        description.name = "Undertone"
         description.isPrivate = true
         description.muteBehavior = .unmuted
         try check("AudioHardwareCreateProcessTap", AudioHardwareCreateProcessTap(description, &tapID))
@@ -241,7 +241,7 @@ final class SystemAudioTap {
 
             let outputUID = try Self.defaultOutputDeviceUID()
             let aggregate: [String: Any] = [
-                kAudioAggregateDeviceNameKey: "MeetNotes System Audio",
+                kAudioAggregateDeviceNameKey: "Undertone System Audio",
                 kAudioAggregateDeviceUIDKey: "meetnotes-" + UUID().uuidString,
                 kAudioAggregateDeviceMainSubDeviceKey: outputUID,
                 kAudioAggregateDeviceIsPrivateKey: true,
@@ -324,20 +324,32 @@ extension AudioObjectPropertyAddress {
 /// "System Audio Recording Only" permission. macOS has no public API to ask for it ahead of time
 /// (a denied tap just records silence), so this uses the TCC calls that system apps use, and
 /// falls back to letting macOS prompt on first capture if they are unavailable.
-enum SystemAudioPermission {
+public enum SystemAudioPermission {
     private static let service = "kTCCServiceAudioCapture" as CFString
     private static let tcc = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW)
 
-    static func request() async -> Bool {
+    public enum Status: Sendable { case granted, denied, notAsked }
+
+    /// `.notAsked` also when macOS does not tell: then it asks on the first recording.
+    public static var status: Status {
         typealias Preflight = @convention(c) (CFString, CFDictionary?) -> Int
-        typealias Request = @convention(c) (CFString, CFDictionary?, @escaping @convention(block) (Bool) -> Void) -> Void
-        guard let preflightSymbol = dlsym(tcc, "TCCAccessPreflight"),
-              let requestSymbol = dlsym(tcc, "TCCAccessRequest") else { return true }
+        guard let preflightSymbol = dlsym(tcc, "TCCAccessPreflight") else { return .notAsked }
         // 0 granted, 1 denied, 2 not asked yet
         switch unsafeBitCast(preflightSymbol, to: Preflight.self)(service, nil) {
-        case 0: return true
-        case 1: return false
-        default:
+        case 0: return .granted
+        case 1: return .denied
+        default: return .notAsked
+        }
+    }
+
+    public static func request() async -> Bool {
+        typealias Request = @convention(c) (CFString, CFDictionary?, @escaping @convention(block) (Bool) -> Void) -> Void
+        guard dlsym(tcc, "TCCAccessPreflight") != nil,
+              let requestSymbol = dlsym(tcc, "TCCAccessRequest") else { return true }
+        switch status {
+        case .granted: return true
+        case .denied: return false
+        case .notAsked:
             let requestAccess = unsafeBitCast(requestSymbol, to: Request.self)
             return await withCheckedContinuation { continuation in
                 requestAccess(service, nil) { granted in continuation.resume(returning: granted) }
@@ -410,7 +422,7 @@ final class TrackWriter {
             try file.write(from: buffer)
             framesWritten += AVAudioFramePosition(buffer.frameLength)
         } catch {
-            NSLog("MeetNotes: write failed: \(error.localizedDescription)")
+            NSLog("Undertone: write failed: \(error.localizedDescription)")
         }
     }
 

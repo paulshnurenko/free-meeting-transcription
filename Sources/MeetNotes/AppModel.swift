@@ -260,7 +260,7 @@ final class AppModel {
             try? FileManager.default.removeItem(at: meeting.folder)
             let declined: Bool = if case RecorderError.systemAudioDenied = error { true } else { false }
             show(declined
-                 ? String(localized: "No permission to record system audio. Turn on MeetNotes under “System Audio Recording Only”.")
+                 ? String(localized: "No permission to record system audio. Turn on Undertone under “System Audio Recording Only”.")
                  : String(localized: "Recording did not start: \(error.localizedDescription)"),
                  permissions: declined)
         }
@@ -450,14 +450,17 @@ final class AppModel {
             refreshCalendar()
         } else {
             calendarAuthorized = false
-            show(String(localized: "No access to the calendar. Allow it for MeetNotes in Privacy & Security settings."))
+            show(String(localized: "No access to the calendar. Allow it for Undertone in Privacy & Security settings."))
         }
     }
 
+    var hasCalendar: Bool { calendarAuthorized }
+
+    /// Scheduled meetings from the macOS calendar.
     func refreshCalendar() {
         calendarAuthorized = CalendarService.isAuthorized
         calendarEnabled = UserDefaults.standard.bool(forKey: SettingsKey.calendarEnabled)
-        guard calendarEnabled, calendarAuthorized else {
+        guard calendarEnabled, hasCalendar else {
             upcoming = []
             return
         }
@@ -466,6 +469,7 @@ final class AppModel {
         upcoming = calendar.events(from: now.addingTimeInterval(-12 * 3600), to: now.addingTimeInterval(7 * 86400),
                                    excludedCalendars: excluded)
             .filter { $0.end > now }
+            .sorted { $0.start < $1.start }
     }
 
     /// A notification with a Record button when a calendar meeting starts and nothing is recording.

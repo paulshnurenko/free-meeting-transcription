@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "MeetNotes", targets: ["MeetNotes"]),
-        .executable(name: "meetnotes-cli", targets: ["MeetNotesCLI"]),
+        .executable(name: "undertone-cli", targets: ["MeetNotesCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7"),

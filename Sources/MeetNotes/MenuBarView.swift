@@ -27,7 +27,6 @@ struct MenuBarLabel: View {
 
 struct MenuBarView: View {
     @Environment(AppModel.self) private var model
-    @State private var title = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -52,113 +51,154 @@ struct MenuBarView: View {
     }
 
     private func recordingSection(_ recording: AppModel.Recording) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                RecordingDot()
-                Text(recording.meeting.displayTitle)
-                    .font(.headline)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                RecordingDot(size: 8)
+                Text("Recording")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.red)
                 Spacer()
                 ElapsedTime(since: recording.startedAt)
                     .font(.system(.title3, design: .rounded).weight(.medium))
             }
+            Text(recording.meeting.displayTitle)
+                .font(.headline)
+                .lineLimit(1)
+                .padding(.top, 4)
             if recording.reconnecting {
                 Label("Reconnecting to the audio device…", systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption)
                     .foregroundStyle(.orange)
+                    .padding(.top, 6)
             }
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 if let mic = recording.micLevel {
-                    TrackLevel(title: "You", systemImage: "mic.fill", level: mic)
+                    TrackBar(title: "You", systemImage: "mic.fill", level: mic)
                 }
-                TrackLevel(title: "Call audio", systemImage: "speaker.wave.2.fill", level: recording.systemLevel)
+                TrackBar(title: "Call", systemImage: "speaker.wave.2.fill", level: recording.systemLevel)
             }
+            .padding(.top, 14)
             Button {
                 Task { await model.stopRecording() }
             } label: {
                 Label("Stop Recording", systemImage: "stop.fill").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
             .tint(.red)
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
+            .padding(.top, 16)
+            PrivacyChip()
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
         }
     }
 
+    /// Up to two scheduled meetings, then a button for a recording without one.
     @ViewBuilder
     private var idleSection: some View {
-        if let event = model.suggestedEvent {
-            SuggestedEventCard(event: event)
-        } else if let next = model.nextEvent {
-            Label {
-                Text("Next: \(next.title) · \(next.timeDescription)").lineLimit(1)
-            } icon: {
-                Image(systemName: "calendar")
+        let events = upNext
+        if !events.isEmpty {
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Up Next")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    PrivacyChip()
+                }
+                ForEach(events) { event in
+                    UpNextCard(event: event, canRecord: event.id == model.suggestedEvent?.id)
+                }
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
         }
-        VStack(spacing: 8) {
-            TextField("Meeting title (optional)", text: $title)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(start)
+        if model.suggestedEvent == nil {
             Button(action: start) {
                 Label("Start Recording", systemImage: "record.circle").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(model.suggestedEvent == nil ? .red : .secondary)
+            .buttonBorderShape(.capsule)
+            .tint(.red)
+            .controlSize(.large)
+        } else {
+            // The card above has the red button; this one is for a call that is not on the calendar.
+            Button(action: start) {
+                Label("New Recording", systemImage: "record.circle").frame(maxWidth: .infinity)
+            }
+            .buttonBorderShape(.capsule)
             .controlSize(.large)
         }
     }
 
+    /// The meeting to record now (if any), then the next one.
+    private var upNext: [CalendarEvent] {
+        var events: [CalendarEvent] = []
+        if let suggested = model.suggestedEvent { events.append(suggested) }
+        if let next = model.nextEvent, !events.contains(where: { $0.id == next.id }) { events.append(next) }
+        return events
+    }
+
     private func start() {
-        let title = title
-        self.title = ""
-        Task { await model.startRecording(title: title) }
+        Task { await model.startRecording(title: "") }
     }
 }
 
-/// "Weekly sync · Now — Record" card for the meeting that is running or about to start.
-struct SuggestedEventCard: View {
+/// A scheduled meeting in the menu bar panel: calendar color, title, when; Join and Record while it
+/// is time to record it.
+struct UpNextCard: View {
     @Environment(AppModel.self) private var model
     let event: CalendarEvent
+    let canRecord: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Label(event.isHappening() ? "Happening now" : "Starting soon", systemImage: "calendar")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(event.isHappening() ? .green : .secondary)
-                Spacer()
-            }
+        HStack(spacing: 10) {
+            Capsule()
+                .fill(event.color)
+                .frame(width: 3, height: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                Text(event.timeDescription)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                Text(when)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(event.isHappening() ? .green : .secondary)
+                    .lineLimit(1)
             }
-            HStack {
-                Button {
-                    Task { await model.startRecording(title: event.title, event: event) }
-                } label: {
-                    Label("Record", systemImage: "record.circle").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
+            Spacer(minLength: 4)
+            if canRecord {
                 if let url = event.meetingURL {
                     Button {
                         NSWorkspace.shared.open(url)
                     } label: {
-                        Label("Join", systemImage: "video").frame(maxWidth: .infinity)
+                        Image(systemName: "video")
                     }
+                    .buttonStyle(.borderless)
+                    .help(EventDetail.joinTitle(url))
                 }
+                Button {
+                    Task { await model.startRecording(title: event.title, event: event) }
+                } label: {
+                    Image(systemName: "record.circle.fill")
+                        .font(.title)
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .red)
+                }
+                .buttonStyle(.plain)
+                .help("Record this meeting")
             }
-            .controlSize(.large)
         }
-        .padding(12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// "Now · until 11:25" or "Tomorrow 14:00–14:45".
+    private var when: String {
+        let end = event.end.formatted(date: .omitted, time: .shortened)
+        if event.isHappening() { return String(localized: "Now · until \(end)") }
+        return event.compactStart + "–" + end
     }
 }
 
@@ -194,7 +234,7 @@ struct MenuBarFooter: View {
             Button {
                 model.showMainWindow()
             } label: {
-                Label("Open MeetNotes", systemImage: "macwindow")
+                Label("Open Undertone", systemImage: "macwindow")
             }
             Spacer()
             SettingsLink {
@@ -206,7 +246,7 @@ struct MenuBarFooter: View {
             } label: {
                 Image(systemName: "power")
             }
-            .help("Quit MeetNotes")
+            .help("Quit Undertone")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 14)

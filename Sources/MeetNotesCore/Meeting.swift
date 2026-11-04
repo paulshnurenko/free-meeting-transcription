@@ -12,6 +12,8 @@ public struct Meeting: Identifiable, Hashable, Sendable {
         public var attendees: [String]?
         /// The label used for the microphone track when it was transcribed.
         public var micSpeaker: String?
+        /// The Google Doc the transcript was last saved to.
+        public var googleDocURL: String?
 
         enum CodingKeys: String, CodingKey {
             case startedAt = "started_at"
@@ -20,6 +22,7 @@ public struct Meeting: Identifiable, Hashable, Sendable {
             case calendarEventID = "calendar_event_id"
             case attendees
             case micSpeaker = "mic_speaker"
+            case googleDocURL = "google_doc_url"
         }
     }
 

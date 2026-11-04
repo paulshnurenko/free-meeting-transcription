@@ -38,13 +38,20 @@ struct MeetingsView: View {
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 400)
         } detail: {
             DetailView(query: query)
+                .toolbar {
+                    if #available(macOS 26, *) {
+                        // Keeps the actions on the right once the title is gone.
+                        ToolbarSpacer(.flexible)
+                    }
+                    // Here rather than on the split view, so it comes before the page's own actions.
+                    ToolbarItem(placement: .primaryAction) { RecordToolbarButton() }
+                }
                 .safeAreaInset(edge: .top) {
                     NoticeBanner().padding(.horizontal, 16).padding(.top, 8)
                 }
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) { RecordToolbarButton() }
-        }
+        // The page title says what is open; the app name in the toolbar adds nothing.
+        .toolbar(removing: .title)
         .onAppear {
             model.reload()
             model.refreshCalendar()
@@ -146,6 +153,9 @@ struct MeetingActions: View {
     let meeting: Meeting
 
     var body: some View {
+        if meeting.hasTranscript {
+            Button("Save Transcript…", systemImage: "square.and.arrow.down") { TranscriptExport.save(meeting) }
+        }
         Button("Show in Finder", systemImage: "folder") {
             NSWorkspace.shared.activateFileViewerSelecting([meeting.folder])
         }
@@ -171,7 +181,8 @@ struct MeetingActions: View {
     }
 }
 
-/// Start/stop in the window toolbar; shows the running time while recording.
+/// Start/stop in the window toolbar; shows the running time while recording. Hidden on the
+/// recording's own page, which has the Stop button.
 struct RecordToolbarButton: View {
     @Environment(AppModel.self) private var model
 
@@ -179,22 +190,30 @@ struct RecordToolbarButton: View {
         // Toolbar items are hosted by AppKit like the menu bar icon: no TimelineView or endless
         // animation here, the once-a-second model state drives the time.
         if case .recording(let elapsed) = model.menuBarState {
-            Button {
-                Task { await model.stopRecording() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "record.circle.fill").foregroundStyle(.red)
-                    Text(Transcript.shortTimestamp(Double(elapsed))).monospacedDigit()
-                    Text("Stop")
+            if let recording = model.recording, model.selection != .meeting(recording.meeting.id) {
+                Button {
+                    Task { await model.stopRecording() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.fill")
+                        Text(Transcript.shortTimestamp(Double(elapsed))).monospacedDigit()
+                    }
                 }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .tint(.red)
+                .help("Stop Recording")
             }
-            .help("Stop Recording")
         } else {
             Button {
                 Task { await model.toggleRecording() }
             } label: {
                 Label("Record", systemImage: "record.circle")
+                    .labelStyle(.titleAndIcon)
             }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .tint(.red)
             .help("Start Recording")
         }
     }

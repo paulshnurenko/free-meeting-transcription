@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds a release: dist/MeetNotes-<version>.dmg and dist/appcast.xml
+# Builds a release: dist/Undertone-<version>.dmg and dist/appcast.xml
 #
 #   scripts/release.sh 0.2.0
 #
@@ -29,12 +29,12 @@ export SIGN_IDENTITY
 VERSION="$VERSION" scripts/build-app.sh
 
 mkdir -p dist
-DMG="dist/MeetNotes-$VERSION.dmg"
+DMG="dist/Undertone-$VERSION.dmg"
 STAGING="$(mktemp -d)"
-cp -R build/MeetNotes.app "$STAGING/"
+cp -R build/Undertone.app "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 rm -f "$DMG"
-hdiutil create -volname "MeetNotes $VERSION" -srcfolder "$STAGING" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname "Undertone $VERSION" -srcfolder "$STAGING" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGING"
 codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
 
@@ -48,15 +48,15 @@ cat > dist/appcast.xml <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>MeetNotes</title>
+    <title>Undertone</title>
     <item>
-      <title>MeetNotes $VERSION</title>
+      <title>Undertone $VERSION</title>
       <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
       <sparkle:version>$VERSION</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <sparkle:fullReleaseNotesLink>https://github.com/$REPO/releases/tag/v$VERSION</sparkle:fullReleaseNotesLink>
-      <enclosure url="https://github.com/$REPO/releases/download/v$VERSION/MeetNotes-$VERSION.dmg"
+      <enclosure url="https://github.com/$REPO/releases/download/v$VERSION/Undertone-$VERSION.dmg"
                  type="application/octet-stream" $SIGNATURE />
     </item>
   </channel>

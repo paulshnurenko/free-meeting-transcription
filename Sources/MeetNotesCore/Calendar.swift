@@ -1,8 +1,8 @@
 import EventKit
 import Foundation
 
-/// A scheduled meeting from the macOS calendar. Google, iCloud, Exchange and Outlook calendars
-/// all arrive here once the account is added in System Settings → Internet Accounts.
+/// A scheduled meeting from the macOS calendar (Google, iCloud, Exchange and Outlook calendars
+/// arrive there once the account is added in System Settings → Internet Accounts).
 public struct CalendarEvent: Identifiable, Hashable, Sendable {
     /// Event id plus start time: occurrences of a recurring meeting share the event id.
     public let id: String
@@ -16,6 +16,9 @@ public struct CalendarEvent: Identifiable, Hashable, Sendable {
     public let calendarTitle: String
     /// The calendar's color as sRGB components, for the dot next to the event.
     public let calendarColor: [Double]?
+    /// The iCalendar UID, the same in every app that shows the event: finds a Google meeting
+    /// that also comes through the macOS calendar.
+    public let externalID: String?
 
     public func isHappening(at date: Date = .now) -> Bool {
         start <= date && date < end
@@ -91,7 +94,8 @@ public final class CalendarService: @unchecked Sendable {
             calendarTitle: event.calendar.title,
             calendarColor: event.calendar.cgColor
                 .flatMap { $0.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil) }
-                .flatMap { $0.components?.prefix(3).map(Double.init) })
+                .flatMap { $0.components?.prefix(3).map(Double.init) },
+            externalID: event.calendarItemExternalIdentifier)
     }
 
     /// Event notes without the dial-in block Google Meet appends (the link is the Join button).
@@ -105,8 +109,12 @@ public final class CalendarService: @unchecked Sendable {
 
     /// Google Meet, Zoom, Teams, Webex or Slack link from the event's URL, location or notes.
     static func meetingLink(in event: EKEvent) -> URL? {
+        meetingLink(in: [event.url?.absoluteString, event.location, event.notes].compactMap { $0 })
+    }
+
+    static func meetingLink(in texts: [String]) -> URL? {
         let pattern = #"https://[^\s<>"]*(meet\.google\.com|zoom\.us|teams\.microsoft\.com|teams\.live\.com|webex\.com|app\.slack\.com/huddle)[^\s<>"]*"#
-        for text in [event.url?.absoluteString, event.location, event.notes].compactMap({ $0 }) {
+        for text in texts {
             if let range = text.range(of: pattern, options: .regularExpression) {
                 return URL(string: String(text[range]))
             }

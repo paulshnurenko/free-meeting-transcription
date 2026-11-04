@@ -1,54 +1,77 @@
 import MeetNotesCore
 import SwiftUI
 
-/// Segmented input level, like the ones in Sound settings. Uses a dB scale, so quiet speech is
-/// still visible.
-struct LevelMeter: View {
-    let level: Float
-    var segments = 18
+/// Text styles of the reading layout (DESIGN.md, Redesign). Everything else uses the system styles.
+extension Font {
+    /// Page titles: meetings and events.
+    static let display = Font.system(size: 30, weight: .bold)
+    /// What was said, and other text people read at length. Pair with `.lineSpacing(5)`.
+    static let transcript = Font.system(size: 15)
+    /// Elapsed time on the recording page.
+    static let heroTimer = Font.system(size: 64, weight: .light, design: .rounded)
+}
 
-    private var lit: Int {
-        guard level > 0.0005 else { return 0 }
-        let db = 20 * log10(Double(level))  // -66 dB … 0 dB
-        return Int((min(1, max(0, (db + 54) / 54)) * Double(segments)).rounded())
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<segments, id: \.self) { index in
-                Capsule()
-                    .fill(index < lit ? color(for: index) : Color.secondary.opacity(0.18))
-                    .frame(width: 4)
-            }
-        }
-        .frame(height: 12)
-        .animation(.easeOut(duration: 0.15), value: lit)
-        .accessibilityElement()
-        .accessibilityValue(Text(lit == 0 ? "Silent" : "\(Int(Double(lit) / Double(segments) * 100))%"))
-    }
-
-    private func color(for index: Int) -> Color {
-        let position = Double(index) / Double(segments)
-        return position > 0.85 ? .red : position > 0.7 ? .yellow : .green
+/// The reading column: wide enough for about 70 characters of transcript text, centered.
+extension View {
+    func readingColumn() -> some View {
+        frame(maxWidth: 600, alignment: .leading)
+            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity)
     }
 }
 
-/// A labeled level row for one track.
-struct TrackLevel: View {
+/// Left gutter of the reading column, where turn times sit; titles line up with the text after it.
+enum Gutter {
+    static let width: CGFloat = 44
+    static let spacing: CGFloat = 16
+    static let inset = width + spacing
+}
+
+/// Input level of one track as a label and a thin bar. Uses a dB scale, so quiet speech still moves it.
+struct TrackBar: View {
     let title: LocalizedStringKey
     let systemImage: String
     let level: Float
 
+    /// 0…1 over -54 dB … 0 dB.
+    private var fraction: Double {
+        guard level > 0.0005 else { return 0 }
+        return min(1, max(0, (20 * log10(Double(level)) + 54) / 54))
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Label(title, systemImage: systemImage)
                 .labelStyle(.titleAndIcon)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .frame(width: 130, alignment: .leading)
-            LevelMeter(level: level)
+                .frame(width: 70, alignment: .leading)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule()
+                        .fill(fraction > 0.85 ? Color.red : .green)
+                        .frame(width: proxy.size.width * fraction)
+                }
+            }
+            .frame(height: 5)
+            .animation(.easeOut(duration: 0.15), value: fraction)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityValue(Text(fraction == 0 ? "Silent" : "\(Int(fraction * 100))%"))
+    }
+}
+
+/// "On this Mac": shown where the user may wonder where their audio and transcript go.
+struct PrivacyChip: View {
+    var body: some View {
+        Label("On this Mac", systemImage: "lock.shield")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.green)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.fill.quaternary, in: Capsule())
+            .help("Audio and transcripts are processed and stored only on this Mac.")
     }
 }
 
@@ -139,27 +162,6 @@ struct ProcessingSteps: View {
             }
         }
         .font(.callout)
-    }
-}
-
-/// A round badge with the speaker's initial, like a contact avatar.
-struct SpeakerBadge: View {
-    let name: String
-    let color: Color
-
-    var body: some View {
-        Text(initial)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.white)
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(color.gradient))
-            .accessibilityHidden(true)
-    }
-
-    /// "Speaker 2" → "2", "Olena" → "O".
-    private var initial: String {
-        if let last = name.split(separator: " ").last, last.allSatisfy(\.isNumber) { return String(last) }
-        return String(name.prefix(1)).uppercased()
     }
 }
 

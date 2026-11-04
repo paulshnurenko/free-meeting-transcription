@@ -32,7 +32,7 @@ struct UpNextRows: View {
     @State private var showsAll = false
 
     var body: some View {
-        if !model.calendarAuthorized {
+        if !model.hasCalendar {
             Button {
                 Task { await model.connectCalendar() }
             } label: {
@@ -58,17 +58,25 @@ struct UpNextRows: View {
     }
 }
 
+/// A scheduled meeting in the sidebar: calendar color bar, title and when; a record button while it runs.
 struct EventRow: View {
     @Environment(AppModel.self) private var model
     let event: CalendarEvent
 
     var body: some View {
         HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 2.5)
+            Capsule()
                 .fill(event.color)
-                .frame(width: 9, height: 9)
-            Text(event.title)
-                .lineLimit(1)
+                .frame(width: 3, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .lineLimit(1)
+                Text(when)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(happening ? .green : .secondary)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 4)
             if model.recording?.meeting.meta.calendarEventID == event.id {
                 RecordingDot(size: 8)
@@ -76,27 +84,29 @@ struct EventRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.secondary)
                     .help("Recorded")
-            } else if event.isHappening() {
-                NowBadge()
-            } else {
-                Text(event.compactStart)
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+            } else if happening, model.recording == nil {
+                Button {
+                    Task { await model.startRecording(title: event.title, event: event) }
+                } label: {
+                    Image(systemName: "record.circle.fill")
+                        .font(.title2)
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .red)
+                }
+                .buttonStyle(.plain)
+                .help("Record this meeting")
             }
         }
+        .padding(.vertical, 3)
     }
-}
 
-struct NowBadge: View {
-    var body: some View {
-        Text("Now")
-            .font(.caption2.weight(.semibold))
-            .textCase(.uppercase)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.green, in: Capsule())
+    private var happening: Bool { event.isHappening() }
+
+    /// "Now · until 11:25" while it runs, otherwise "Tomorrow 14:00–14:45".
+    private var when: String {
+        let end = event.end.formatted(date: .omitted, time: .shortened)
+        if happening { return String(localized: "Now · until \(end)") }
+        return event.compactStart + "–" + end
     }
 }
 
@@ -104,6 +114,8 @@ struct NowBadge: View {
 struct AttendeeStack: View {
     let names: [String]
     var limit = 4
+    /// Shifts the colors, so a list of single avatars does not repeat one color.
+    var colorOffset = 0
 
     var body: some View {
         HStack(spacing: -6) {
@@ -112,7 +124,7 @@ struct AttendeeStack: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 22, height: 22)
-                    .background(Circle().fill(Self.palette[index % Self.palette.count].gradient))
+                    .background(Circle().fill(Self.palette[(index + colorOffset) % Self.palette.count].gradient))
                     .overlay(Circle().stroke(.background, lineWidth: 1.5))
             }
             if names.count > limit {
@@ -130,97 +142,98 @@ struct AttendeeStack: View {
     static let palette: [Color] = [.blue, .purple, .pink, .teal, .indigo, .mint]
 }
 
-/// A scheduled meeting: what it is, who is coming, and a big Start Recording button.
+/// A scheduled meeting, laid out like a transcript page: what it is, who is coming, what the
+/// invite says, and the one button that records it.
 struct EventDetail: View {
     @Environment(AppModel.self) private var model
     let event: CalendarEvent
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 6) {
-                    (Text(event.title) + Text("  ") + Text(event.compactStart).foregroundStyle(.secondary))
-                        .font(.largeTitle.weight(.bold))
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(event.title)
+                        .font(.display)
                         .textSelection(.enabled)
                     HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 2.5).fill(event.color).frame(width: 9, height: 9)
+                        Circle().fill(event.color).frame(width: 7, height: 7)
                         Text(event.timeDescription + " · " + event.calendarTitle)
-                        if event.isHappening() { NowBadge() }
                     }
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        recordButton
+                        if let url = event.meetingURL {
+                            Button {
+                                NSWorkspace.shared.open(url)
+                            } label: {
+                                Label(Self.joinTitle(url), systemImage: "video.fill")
+                            }
+                            .buttonBorderShape(.capsule)
+                        }
+                    }
+                    .controlSize(.large)
+                    .padding(.top, 8)
                 }
 
-                card
-
                 if !event.attendees.isEmpty {
-                    DetailSection("Attendees") {
-                        ForEach(event.attendees, id: \.self) { name in
-                            Label(name, systemImage: "person.crop.circle")
+                    section("People") {
+                        ForEach(Array(event.attendees.enumerated()), id: \.offset) { index, name in
+                            HStack(spacing: 10) {
+                                AttendeeStack(names: [name], colorOffset: index)
+                                Text(name)
+                            }
                         }
                     }
                 }
                 if let location = event.location, location != event.meetingURL?.absoluteString {
-                    DetailSection("Location") {
+                    section("Location") {
                         Text(location).textSelection(.enabled)
                     }
                 }
                 if let notes = event.notes {
-                    DetailSection("Notes") {
+                    section("From the Invite") {
                         Text(notes)
+                            .font(.transcript)
+                            .lineSpacing(5)
                             .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                section("Recording") {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        PrivacyChip()
+                        Text("Let everyone know you are recording. Recording people may require their consent.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-            .frame(maxWidth: 760, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 24)
-            .frame(maxWidth: .infinity)
+            .padding(.leading, Gutter.inset)
+            .padding(.top, 28)
+            .padding(.bottom, 40)
+            .readingColumn()
         }
     }
 
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: "calendar")
-                    .foregroundStyle(event.color)
-                Text(event.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                if !event.attendees.isEmpty {
-                    AttendeeStack(names: event.attendees)
-                }
-                Spacer(minLength: 8)
-                if let url = event.meetingURL {
-                    Button {
-                        NSWorkspace.shared.open(url)
-                    } label: {
-                        Label("Join", systemImage: "video.fill")
-                    }
-                }
-                recordButton
-            }
-            .controlSize(.large)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("How it works")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Step(number: 1, text: "Click Start Recording when the call begins. MeetNotes records your microphone and the call audio.")
-                Step(number: 2, text: "Keep talking as usual. No bot joins the meeting and nothing is uploaded.")
-                Step(number: 3, text: "Click Stop when you are done. The transcript is ready in about a minute.")
-            }
-
-            Label("Let everyone know you are recording. Recording people may require their consent.", systemImage: "info.circle")
-                .font(.footnote)
+    private func section(_ title: LocalizedStringKey, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) { content() }
+                .font(.callout)
         }
-        .padding(18)
-        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
+    }
+
+    /// "Join Google Meet", "Join Zoom", "Join Teams", or "Join Call" for anything else.
+    static func joinTitle(_ url: URL) -> LocalizedStringKey {
+        let host = url.host() ?? ""
+        if host.hasSuffix("meet.google.com") { return "Join Google Meet" }
+        if host.contains("zoom.us") { return "Join Zoom" }
+        if host.contains("teams.microsoft") || host.contains("teams.live") { return "Join Teams" }
+        return "Join Call"
     }
 
     @ViewBuilder
@@ -232,6 +245,7 @@ struct EventDetail: View {
                 Label("Stop Recording", systemImage: "stop.fill")
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
             .tint(.red)
         } else if let meeting = model.meetings.first(where: { $0.meta.calendarEventID == event.id }) {
             Button {
@@ -239,6 +253,8 @@ struct EventDetail: View {
             } label: {
                 Label("Open Transcript", systemImage: "text.bubble")
             }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
         } else {
             Button {
                 Task { await model.startRecording(title: event.title, event: event) }
@@ -246,43 +262,10 @@ struct EventDetail: View {
                 Label("Start Recording", systemImage: "record.circle")
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
             .tint(.red)
             .disabled(model.recording != nil)
             .help(model.recording != nil ? "Another meeting is being recorded" : "Start recording this meeting")
-        }
-    }
-}
-
-private struct Step: View {
-    let number: Int
-    let text: LocalizedStringKey
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number).")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.callout)
-    }
-}
-
-/// A titled block on a detail page.
-struct DetailSection<Content: View>: View {
-    let title: LocalizedStringKey
-    @ViewBuilder let content: Content
-
-    init(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            VStack(alignment: .leading, spacing: 6) { content }
         }
     }
 }

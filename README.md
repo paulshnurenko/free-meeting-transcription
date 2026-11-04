@@ -8,7 +8,7 @@ No bot joins your call, no audio leaves your Mac.</p>
 <p align="center"><a href="https://paulshnurenko.github.io/free-meeting-transcription/">Website</a> ·
 <a href="https://github.com/paulshnurenko/free-meeting-transcription/releases/latest">Download</a></p>
 
-<p align="center"><sub>Called MeetNotes until November 2026. Version 1.0 still shows the old name; the next update brings the new one.</sub></p>
+<p align="center"><sub>Called MeetNotes until November 2026.</sub></p>
 
 ---
 
@@ -65,17 +65,19 @@ button to press.
 
 Requires macOS 15 or later on Apple Silicon. The app is signed and notarized by Apple.
 
-### Google Calendar
+### Google Calendar and other calendars
 
-Undertone reads meetings from the macOS Calendar, so it needs no access to your Google account. Add the
-account in **System Settings → Internet Accounts → Google**, turn on **Calendars**, then click
-**Connect Calendar…** in Undertone. In Settings you can choose which calendars to show.
+Add the account in **System Settings → Internet Accounts** (Google, Exchange, iCloud…), turn on
+**Calendars**, then click **Connect Calendar…** in Undertone. In Settings you can choose which calendars
+to show.
 
 ## Privacy
 
-Recording, echo removal and speech recognition all run on your Mac. Undertone sends nothing anywhere.
-The only network requests are the one-time model download from Hugging Face and update checks against
-this repository's releases.
+Recording, echo removal and speech recognition all run on your Mac. Audio is never uploaded.
+The only network requests are the one-time model download from Hugging Face, update checks against
+this repository's releases and, if you choose to leave it on first launch, your email address for the
+developer's occasional questions about the app. See the
+[privacy policy](https://paulshnurenko.github.io/free-meeting-transcription/privacy.html).
 
 Recording other people may require their consent where you live. Let participants know when you record.
 
@@ -137,7 +139,7 @@ The code is split into a UI-free library and two front ends:
 | `Sources/MeetNotesCore/Meeting.swift` | Meeting folders and their metadata |
 | `Sources/MeetNotesCore/Calendar.swift` | Scheduled meetings from EventKit |
 | `Sources/MeetNotes/` | SwiftUI app: menu bar, meetings window, settings, notifications, updates |
-| `Sources/MeetNotesCLI/` | `meetnotes-cli`: transcribe a meeting folder from the terminal |
+| `Sources/MeetNotesCLI/` | `undertone-cli`: transcribe a meeting folder from the terminal |
 | `Resources/uk.lproj/` | Ukrainian translation |
 
 ## Meeting folders
@@ -172,10 +174,15 @@ open build/Undertone.app
 The build is signed with your Developer ID certificate if you have one, otherwise ad-hoc (then macOS asks
 for permissions again after every rebuild).
 
+The optional feedback email in onboarding needs your own Firebase project with a Firestore database and
+the rules in `firebase/firestore.rules`. Save `{"projectId": "…", "apiKey": "…"}` as
+`~/.config/meetnotes/firebase.json`; `scripts/build-app.sh` puts it into the app, and without it the step
+is hidden.
+
 To re-transcribe a recorded meeting without the UI:
 
 ```bash
-swift run meetnotes-cli process ~/MeetingNotes/<meeting folder>
+swift run undertone-cli process ~/MeetingNotes/<meeting folder>
 ```
 
 ### Releasing

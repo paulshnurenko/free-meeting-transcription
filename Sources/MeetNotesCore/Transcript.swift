@@ -154,4 +154,9 @@ public enum Transcript {
     public static func markdown(_ segments: [Segment]) -> String {
         segments.map { "**[\(timestamp($0.start))] \($0.speaker):** \($0.text)" }.joined(separator: "\n\n")
     }
+
+    /// The same without Markdown, for a .txt file.
+    public static func plainText(_ segments: [Segment]) -> String {
+        segments.map { "[\(timestamp($0.start))] \($0.speaker): \($0.text)" }.joined(separator: "\n\n")
+    }
 }

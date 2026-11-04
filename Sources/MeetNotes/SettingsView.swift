@@ -60,7 +60,7 @@ struct GeneralSettings: View {
             } header: {
                 Text("Permissions")
             } footer: {
-                Text("MeetNotes records the microphone and “System Audio Recording Only”. It never records the screen.")
+                Text("Undertone records the microphone and “System Audio Recording Only”. It never records the screen.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -94,12 +94,12 @@ struct CalendarSettings: View {
                 Toggle("Remind me to record when a meeting starts", isOn: $remindOnStart)
                     .disabled(!calendarEnabled)
             } footer: {
-                Text("MeetNotes reads meetings from the macOS Calendar. To see Google Calendar, add your Google account in System Settings → Internet Accounts and turn on Calendars for it.")
+                Text("Undertone reads meetings from the macOS Calendar. To see Google Calendar, add your Google account in System Settings → Internet Accounts and turn on Calendars for it.")
                     .foregroundStyle(.secondary)
             }
 
             if calendarEnabled {
-                if model.calendarAuthorized {
+                if model.hasCalendar {
                     Section("Calendars") {
                         ForEach(groupedCalendars, id: \.source) { group in
                             ForEach(group.calendars, id: \.id) { item in
@@ -110,9 +110,10 @@ struct CalendarSettings: View {
                             }
                         }
                     }
-                } else {
+                }
+                if !model.calendarAuthorized {
                     Section {
-                        Button("Connect Calendar…") { Task { await model.connectCalendar() } }
+                        Button("Connect macOS Calendar…") { Task { await model.connectCalendar() } }
                     }
                 }
             }
@@ -128,7 +129,7 @@ struct CalendarSettings: View {
     }
 
     private var groupedCalendars: [(source: String, calendars: [(id: String, title: String, source: String)])] {
-        let all = model.calendar.calendars()
+        let all = model.calendarAuthorized ? model.calendar.calendars() : []
         let sources = all.map(\.source).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
         return sources.map { source in (source, all.filter { $0.source == source }) }
     }
@@ -206,7 +207,7 @@ struct AboutSettings: View {
                         .resizable()
                         .frame(width: 64, height: 64)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("MeetNotes").font(.title2.weight(.semibold))
+                        Text("Undertone").font(.title2.weight(.semibold))
                         Text("Version \(Self.version)").foregroundStyle(.secondary)
                     }
                 }
@@ -220,7 +221,7 @@ struct AboutSettings: View {
             }
 
             Section {
-                Text("MeetNotes is free and open source under the MIT License. Speech recognition: NVIDIA Parakeet TDT 0.6B v3 (CC BY 4.0) through FluidAudio (Apache 2.0). Updates: Sparkle (MIT).")
+                Text("Undertone is free and open source under the MIT License. Speech recognition: NVIDIA Parakeet TDT 0.6B v3 (CC BY 4.0) through FluidAudio (Apache 2.0). Updates: Sparkle (MIT).")
                     .foregroundStyle(.secondary)
                 Link(destination: URL(string: "https://github.com/paulshnurenko/free-meeting-transcription")!) {
                     Label("Source code on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")

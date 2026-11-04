@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Security rules for the Firestore database behind the optional feedback email (see
+// Sources/MeetNotes/FeedbackSignup.swift). The app ships the project's web API key, so anyone can
+// call this database: the rules let them add one well-formed signup and nothing else. Only the
+// developer reads the list, in the Firebase console.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /signups/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['email', 'appVersion', 'language'])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() < 200
+        && request.resource.data.email.matches('[^@\\s]+@[^@\\s]+\\.[^@\\s]+')
+        && request.resource.data.get('appVersion', '') is string
+        && request.resource.data.get('appVersion', '').size() < 20
+        && request.resource.data.get('language', '') is string
+        && request.resource.data.get('language', '').size() < 20;
+    }
+  }
+}

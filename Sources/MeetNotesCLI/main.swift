@@ -1,8 +1,8 @@
 import Foundation
 import MeetNotesCore
 
-// meetnotes-cli process <meeting folder or name> [--no-speakers]   re-recognizes a recorded meeting
-// meetnotes-cli list                               lists meetings
+// undertone-cli process <meeting folder or name> [--no-speakers]   re-recognizes a recorded meeting
+// undertone-cli list                               lists meetings
 
 let store = MeetingStore(root: MeetingStore.defaultRoot)
 let args = Array(CommandLine.arguments.dropFirst())
@@ -20,7 +20,7 @@ case "list":
     }
 
 case "process":
-    guard args.count >= 2 else { fail("usage: meetnotes-cli process <folder> [--no-speakers]") }
+    guard args.count >= 2 else { fail("usage: undertone-cli process <folder> [--no-speakers]") }
     var folder = URL(filePath: (args[1] as NSString).expandingTildeInPath)
     if !FileManager.default.fileExists(atPath: folder.path) { folder = store.root.appending(path: args[1]) }
     let meeting = Meeting(folder: folder)
@@ -44,5 +44,5 @@ case "process":
     print(meeting.transcriptMD.path)
 
 default:
-    fail("usage: meetnotes-cli list | process <folder>")
+    fail("usage: undertone-cli list | process <folder>")
 }

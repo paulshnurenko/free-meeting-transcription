@@ -1,9 +1,12 @@
 #!/bin/bash
-# Builds build/MeetNotes.app from the Swift package.
+# Builds build/Undertone.app from the Swift package.
 #
 #   scripts/build-app.sh                  # signed with your Developer ID if you have one, else ad-hoc
 #   VERSION=0.3.0 scripts/build-app.sh    # sets the app version
 #   SIGN_IDENTITY=- scripts/build-app.sh  # force an ad-hoc signature
+#
+# The optional feedback email in onboarding needs a Firebase project in
+# ~/.config/meetnotes/firebase.json (or FIREBASE_CONFIG=path); without it the step is hidden.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,10 +17,14 @@ CONFIG="${CONFIG:-release}"
 swift build -c "$CONFIG" --arch arm64 --product MeetNotes
 BIN="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)"
 
-APP=build/MeetNotes.app
+APP=build/Undertone.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN/MeetNotes" "$APP/Contents/MacOS/"
+# SwiftPM records the deployment target as the SDK version, and macOS 26 then draws the app in the
+# old style. Record the real SDK so the app gets the current look (Liquid Glass) where available.
+vtool -set-build-version macos 15.0 "$(xcrun --sdk macosx --show-sdk-version)" -replace \
+    -output "$APP/Contents/MacOS/MeetNotes" "$APP/Contents/MacOS/MeetNotes"
 cp Resources/Info.plist "$APP/Contents/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp -R Resources/*.lproj "$APP/Contents/Resources/"
@@ -31,6 +38,16 @@ install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS
 if [ -n "${VERSION:-}" ]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+fi
+
+# The optional feedback email goes to a Firestore collection that only accepts new entries. Its
+# web API key is public by design, but stays out of git so forks use their own project.
+# ~/.config/meetnotes/firebase.json: {"projectId": "...", "apiKey": "..."}
+FIREBASE_CONFIG="${FIREBASE_CONFIG:-$HOME/.config/meetnotes/firebase.json}"
+if [ -f "$FIREBASE_CONFIG" ]; then
+    /usr/libexec/PlistBuddy -c "Set :FirebaseProjectID $(plutil -extract projectId raw -o - "$FIREBASE_CONFIG")" \
+        -c "Set :FirebaseAPIKey $(plutil -extract apiKey raw -o - "$FIREBASE_CONFIG")" "$APP/Contents/Info.plist"
+    echo "Feedback email: on"
 fi
 
 # A Developer ID certificate keeps macOS permissions across rebuilds; ad-hoc signatures lose them.
