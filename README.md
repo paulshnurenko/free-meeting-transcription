@@ -27,7 +27,7 @@ Start and stop recording from the menu bar. When you stop, the transcript is mad
 button to press.
 
 <p align="center">
-  <img src="docs/screenshot-menu-bar.png" width="360" alt="The Undertone menu bar panel with a Start Recording button">
+  <img src="docs/screenshot-menu-bar.png" width="320" alt="The Undertone menu bar panel with a Start Recording button">
   &nbsp;
   <img src="docs/screenshot-settings.png" width="460" alt="Transcription settings: speaker separation and the on-device Parakeet model">
 </p>
